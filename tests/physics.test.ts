@@ -7,7 +7,7 @@ import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 const DT = 1 / 120;
 
 function emptySegment(index: number): Segment {
-  return { index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [], obstacles: [], coins: [] };
+  return { index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [], obstacles: [], coins: [], boosts: [] };
 }
 
 /** 高さ関数から TrackQuery を作る。傾きは physics と同じ後退差分 */

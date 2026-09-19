@@ -9,6 +9,7 @@ export interface Coin { id: string; x: number; z: number; lift: number; }
 export interface Ramp { z: number; length: number; height: number; }
 export interface IceBand { z0: number; z1: number; }
 export interface Bump { z: number; amp: number; width: number; }
+export interface BoostPad { id: string; x: number; z: number; length: number; width: number; }
 
 export interface Segment {
   index: number;
@@ -20,6 +21,7 @@ export interface Segment {
   ramps: Ramp[];
   obstacles: Obstacle[];
   coins: Coin[];
+  boosts: BoostPad[];
 }
 
 /** 物理が必要とするコースの問い合わせ。テストではこれを偽装する */
@@ -56,6 +58,12 @@ export interface RunState {
   lastLandingBonus: number;
   /** ボーナス着地の累計回数 (HUD トースト表示のトリガー用) */
   landingCount: number;
+  boostTime: number;      // remaining seconds of boost thrust
+  boostGrace: number;     // remaining seconds during which steering costs nothing and friction is ice-level
+  boostChain: number;     // number of pads hit in the current chain (0 = none)
+  boostChainTime: number; // seconds left before the chain resets
+  boostCount: number;     // pads hit this run (for effects/HUD; increments on every hit)
+  triggeredPadIds: Set<string>;
 }
 
 export interface Upgrades { slingshot: number; sled: number; income: number; }

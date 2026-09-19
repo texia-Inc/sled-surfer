@@ -28,6 +28,13 @@ export interface PhysicsParams {
   /** SLED 強化で下がる。1 が未強化 */
   frictionMul: number;
   dragMul: number;
+  boostAccel: number;
+  boostDuration: number;
+  boostMinSpeed: number;
+  boostGraceDuration: number;
+  boostChainWindow: number;
+  boostChainStep: number;
+  boostChainMax: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
@@ -61,6 +68,13 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   coinVertical: 1.5,
   frictionMul: 1,
   dragMul: 1,
+  boostAccel: 30,          // m/s² while boostTime > 0
+  boostDuration: 0.8,      // seconds of thrust per pad
+  boostMinSpeed: 22,       // vz is raised to at least this on hit
+  boostGraceDuration: 1.2, // seconds: steer penalty off, friction = ice
+  boostChainWindow: 3.0,   // seconds to hit the next pad to keep the chain
+  boostChainStep: 0.1,     // chain multiplier = 1 + step * (chain - 1), capped
+  boostChainMax: 3,        // chain count cap (multiplier max = 1 + 0.1*2 = 1.2)
 };
 
 export const LAUNCH = {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createTrack, baseHeight, baseSlope, mulberry32,
+  createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_HEIGHT, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
 } from '../src/core/track';
 
@@ -128,5 +128,77 @@ describe('createTrack', () => {
     const ids = new Set(s.coins.map((c) => c.id));
     expect(ids.size).toBe(s.coins.length);
     expect(s.coins.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('places boost pads inside the track width and never before boostFirstZ', () => {
+    for (let seed = 1; seed <= 5; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 20; i++) {
+        const s = t.getSegment(i);
+        for (const b of s.boosts) {
+          expect(b.z).toBeGreaterThanOrEqual(TRACK_GEN.boostFirstZ);
+          expect(b.x - b.width / 2).toBeGreaterThanOrEqual(-TRACK_WIDTH / 2);
+          expect(b.x + b.width / 2).toBeLessThanOrEqual(TRACK_WIDTH / 2);
+        }
+      }
+    }
+  });
+
+  it('never overlaps a boost pad with a ramp span expanded by the gap', () => {
+    for (let seed = 1; seed <= 5; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 20; i++) {
+        const s = t.getSegment(i);
+        for (const b of s.boosts) {
+          for (const r of s.ramps) {
+            const rampStart = r.z - TRACK_GEN.boostMinGapFromRamp;
+            const rampEnd = r.z + r.length + TRACK_GEN.boostMinGapFromRamp;
+            const overlaps = b.z < rampEnd && b.z + b.length > rampStart;
+            expect(overlaps).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it('never overlaps an obstacle circle with a boost pad rectangle', () => {
+    for (let seed = 1; seed <= 5; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 20; i++) {
+        const s = t.getSegment(i);
+        for (const b of s.boosts) {
+          for (const o of s.obstacles) {
+            const overlapsX = Math.abs(o.x - b.x) < b.width / 2 + o.r;
+            const overlapsZ = o.z >= b.z - o.r && o.z <= b.z + b.length + o.r;
+            expect(overlapsX && overlapsZ).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it('produces both a 2-pad segment and a 0-pad segment across seeds', () => {
+    let sawTwo = false;
+    let sawZero = false;
+    for (let seed = 1; seed <= 5; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 20; i++) {
+        const count = t.getSegment(i).boosts.length;
+        if (count === 2) sawTwo = true;
+        if (count === 0) sawZero = true;
+      }
+    }
+    expect(sawTwo).toBe(true);
+    expect(sawZero).toBe(true);
+  });
+
+  it('isOnPad is true inside the pad and false just outside on each axis', () => {
+    const pad = { id: 'p', x: 0, z: 10, length: 6, width: 4 };
+    expect(isOnPad(0, 10, pad)).toBe(true);
+    expect(isOnPad(1.9, 12, pad)).toBe(true);
+    expect(isOnPad(2.1, 12, pad)).toBe(false);
+    expect(isOnPad(-2.1, 12, pad)).toBe(false);
+    expect(isOnPad(0, 9.9, pad)).toBe(false);
+    expect(isOnPad(0, 16, pad)).toBe(false);
   });
 });
