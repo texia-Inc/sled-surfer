@@ -18,6 +18,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   scene.fog = new THREE.Fog(SKY, 60, 220);
 
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+  scene.add(camera);
 
   const sun = new THREE.DirectionalLight(0xffffff, 2.2);
   sun.position.set(20, 40, 10);

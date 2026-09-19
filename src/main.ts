@@ -17,6 +17,9 @@ const FIXED_DT = 1 / 120;
 const MAX_STEPS = 4;
 const MAX_FRAME_DT = 0.1;
 const STEER_SMOOTH_RATE = 10;
+const SHAKE_BOOST = 0.6;
+const SHAKE_LANDING = 0.5;
+const SHAKE_STUN = 1.0;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 
 function getStorage(): StorageLike | null {
@@ -141,9 +144,9 @@ function boot(): void {
 
     let shake = 0;
     if (run) {
-      if (run.boostCount > lastBoostCount) shake = 0.6;
-      if (run.landingCount > lastLandingCountShake) shake = 0.5;
-      if (run.stunTime > 0 && lastStunTime === 0) shake = 1.0;
+      if (run.boostCount > lastBoostCount) shake = Math.max(shake, SHAKE_BOOST);
+      if (run.landingCount > lastLandingCountShake) shake = Math.max(shake, SHAKE_LANDING);
+      if (run.stunTime > 0 && lastStunTime === 0) shake = Math.max(shake, SHAKE_STUN);
       lastBoostCount = run.boostCount;
       lastLandingCountShake = run.landingCount;
       lastStunTime = run.stunTime;
