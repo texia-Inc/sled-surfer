@@ -1,5 +1,5 @@
 import type { Profile } from './types';
-import { GOAL } from './params';
+import { GOAL, UPGRADE } from './params';
 
 export const SAVE_KEY = 'sled-surfer:profile:v1';
 
@@ -19,6 +19,11 @@ export function defaultProfile(): Profile {
 
 function num(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+function clampInt(v: unknown, fallback: number, lo: number, hi: number): number {
+  const n = num(v, fallback);
+  return Math.max(lo, Math.min(hi, Math.round(n)));
 }
 
 export function loadProfile(storage: StorageLike | null): Profile {
@@ -41,13 +46,13 @@ export function loadProfile(storage: StorageLike | null): Profile {
   const o = parsed as Record<string, unknown>;
   const up = (typeof o.upgrades === 'object' && o.upgrades !== null ? o.upgrades : {}) as Record<string, unknown>;
   return {
-    coins: num(o.coins, d.coins),
+    coins: clampInt(o.coins, d.coins, 0, Infinity),
     bestDistance: num(o.bestDistance, d.bestDistance),
-    goalDistance: num(o.goalDistance, d.goalDistance),
+    goalDistance: Math.max(GOAL.roundTo, num(o.goalDistance, d.goalDistance)),
     upgrades: {
-      slingshot: num(up.slingshot, 0),
-      sled: num(up.sled, 0),
-      income: num(up.income, 0),
+      slingshot: clampInt(up.slingshot, 0, 0, UPGRADE.maxLevel),
+      sled: clampInt(up.sled, 0, 0, UPGRADE.maxLevel),
+      income: clampInt(up.income, 0, 0, UPGRADE.maxLevel),
     },
   };
 }

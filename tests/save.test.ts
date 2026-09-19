@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadProfile, saveProfile, defaultProfile, SAVE_KEY, type StorageLike } from '../src/core/save';
+import { GOAL, UPGRADE } from '../src/core/params';
 
 function memoryStorage(): StorageLike & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -34,5 +35,21 @@ describe('save', () => {
   it('tolerates a null storage', () => {
     expect(loadProfile(null)).toEqual(defaultProfile());
     expect(() => saveProfile(null, defaultProfile())).not.toThrow();
+  });
+
+  it('clamps out-of-range or invalid values', () => {
+    const st = memoryStorage();
+    st.setItem(SAVE_KEY, JSON.stringify({ upgrades: { sled: 999 } }));
+    expect(loadProfile(st).upgrades.sled).toBe(UPGRADE.maxLevel);
+
+    st.setItem(SAVE_KEY, JSON.stringify({ coins: -5 }));
+    expect(loadProfile(st).coins).toBe(0);
+
+    st.setItem(SAVE_KEY, JSON.stringify({ goalDistance: 0 }));
+    expect(loadProfile(st).goalDistance).toBe(GOAL.roundTo);
+
+    // JSON.parse('{"coins":1e400}') yields Infinity, which is not finite.
+    st.setItem(SAVE_KEY, '{"coins":1e400}');
+    expect(loadProfile(st).coins).toBe(defaultProfile().coins);
   });
 });
