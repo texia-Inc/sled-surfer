@@ -111,7 +111,9 @@ describe('air', () => {
     s.grounded = false;
     s.y = 8;
     s.vy = 0;
-    run(s, flat, 2);
+    for (let i = 0; i < 240 && !s.grounded; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, flat, DEFAULT_PHYSICS);
+    }
     expect(s.grounded).toBe(true);
     expect(s.vz).toBeGreaterThan(10.4);
     expect(s.lastLandingBonus).toBeGreaterThan(1);
