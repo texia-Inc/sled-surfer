@@ -3,6 +3,7 @@ import { DEFAULT_PHYSICS, ECONOMY, GOAL, LAUNCH, RUN, type PhysicsParams } from 
 import { createRunState, launchSpeed, stepRun } from './physics';
 import { createTrack } from './track';
 import { buy as buyUpgrade, incomeMul, sledMul, slingshotMul } from './upgrades';
+import { zoneAt, ZONE_GOALS } from './zones';
 
 export function computeResult(profile: Profile, run: RunState): RunResult {
   const distance = run.distance;
@@ -16,14 +17,20 @@ export function computeResult(profile: Profile, run: RunState): RunResult {
     earned: Math.floor((run.coinsThisRun + distanceCoins) * mul),
     newBest: distance > profile.bestDistance,
     goalReached,
+    zoneReached: zoneAt(distance).id,
   };
 }
 
-export function applyResult(profile: Profile, result: RunResult): Profile {
-  let goal = profile.goalDistance;
-  if (result.goalReached) {
-    goal = Math.ceil((goal * GOAL.growth) / GOAL.roundTo) * GOAL.roundTo;
+/** First zone milestone strictly greater than `d`; past the last milestone, steps by GOAL.stepAfter. */
+export function nextGoal(d: number): number {
+  for (const milestone of ZONE_GOALS) {
+    if (milestone > d) return milestone;
   }
+  return Math.ceil((d + 1) / GOAL.stepAfter) * GOAL.stepAfter;
+}
+
+export function applyResult(profile: Profile, result: RunResult): Profile {
+  const goal = result.goalReached ? nextGoal(result.distance) : profile.goalDistance;
   return {
     ...profile,
     coins: profile.coins + result.earned,

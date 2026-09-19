@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { Game, computeResult, applyResult } from '../src/core/game';
+import { Game, computeResult, applyResult, nextGoal } from '../src/core/game';
 import { defaultProfile } from '../src/core/save';
 import { createRunState } from '../src/core/physics';
-import { GOAL, ECONOMY } from '../src/core/params';
+import { ECONOMY } from '../src/core/params';
+import { zoneAt } from '../src/core/zones';
 import type { Profile } from '../src/core/types';
 
 const NO_INPUT = { steer: 0, rocket: false };
@@ -24,26 +25,41 @@ describe('computeResult', () => {
     expect(r.goalReached).toBe(true);
     expect(r.earned).toBe(Math.floor((10 + 25) * 2 * ECONOMY.goalBonusMul));
     expect(r.newBest).toBe(true);
+    expect(r.zoneReached).toBe(zoneAt(250).id);
   });
 
-  it('applyResult adds coins, updates best, and grows the goal', () => {
-    const p: Profile = { ...defaultProfile(), coins: 5, bestDistance: 300, goalDistance: 1000 };
+  describe('nextGoal', () => {
+    it('moves from the initial goal to the next zone milestone', () => {
+      expect(nextGoal(600)).toBe(1200);
+    });
+
+    it('skips straight to the milestone past the finished distance', () => {
+      expect(nextGoal(1300)).toBe(2000);
+    });
+
+    it('steps by GOAL.stepAfter once past the last milestone', () => {
+      expect(nextGoal(3500)).toBe(4000);
+    });
+  });
+
+  it('applyResult adds coins, updates best, and advances the goal to the next milestone', () => {
+    const p: Profile = { ...defaultProfile(), coins: 5, bestDistance: 300, goalDistance: 600 };
     const run = createRunState({ v0: 0, angleDeg: 0, rockets: 0, groundY: 0 });
-    run.distance = 1200;
+    run.distance = 1300;
     const r = computeResult(p, run);
     const after = applyResult(p, r);
     expect(after.coins).toBe(5 + r.earned);
-    expect(after.bestDistance).toBe(1200);
-    expect(after.goalDistance).toBe(1500);
-    expect(p.goalDistance).toBe(1000);
+    expect(after.bestDistance).toBe(1300);
+    expect(after.goalDistance).toBe(2000);
+    expect(p.goalDistance).toBe(600);
   });
 
-  it('rounds the grown goal up to GOAL.roundTo', () => {
-    const p: Profile = { ...defaultProfile(), goalDistance: 1010 };
+  it('does not advance the goal when it was not reached', () => {
+    const p: Profile = { ...defaultProfile(), goalDistance: 600 };
     const run = createRunState({ v0: 0, angleDeg: 0, rockets: 0, groundY: 0 });
-    run.distance = 2000;
+    run.distance = 300;
     const after = applyResult(p, computeResult(p, run));
-    expect(after.goalDistance).toBe(Math.ceil((1010 * GOAL.growth) / GOAL.roundTo) * GOAL.roundTo);
+    expect(after.goalDistance).toBe(600);
   });
 });
 
