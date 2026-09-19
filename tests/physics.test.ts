@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRunState, stepRun, coinWorldY, launchSpeed } from '../src/core/physics';
 import { DEFAULT_PHYSICS, LAUNCH } from '../src/core/params';
+import { createTrack } from '../src/core/track';
 import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 
 const DT = 1 / 120;
@@ -128,6 +129,31 @@ describe('air', () => {
     expect(s.grounded).toBe(true);
     expect(s.vz).toBeLessThan(10);
     expect(s.lastLandingBonus).toBe(0);
+  });
+
+  it('launches off a real ramp cliff at speed instead of teleporting down (vz * dt > SLOPE_STEP)', () => {
+    const track = createTrack(11);
+    let rampZ = -1;
+    let rampLength = 0;
+    outer: for (let i = 0; i < 40; i++) {
+      const seg = track.getSegment(i);
+      for (const r of seg.ramps) {
+        rampZ = r.z;
+        rampLength = r.length;
+        break outer;
+      }
+    }
+    expect(rampZ).toBeGreaterThanOrEqual(0);
+
+    const startZ = rampZ - 5;
+    const s = grounded({ z: startZ, vz: 25, y: track.heightAt(startZ) });
+    let leftGround = false;
+    const cap = Math.round(3 / DT);
+    for (let i = 0; i < cap && s.z <= rampZ + rampLength + 2; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (!s.grounded) leftGround = true;
+    }
+    expect(leftGround).toBe(true);
   });
 });
 

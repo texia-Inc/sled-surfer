@@ -72,7 +72,8 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     const vy1 = s.vz * slope1;
     const ground = track.heightAt(s.z);
     const requiredAccel = (vy1 - vy0) / dt;
-    if (requiredAccel < -p.g && s.vz > 0) {
+    const projected = s.y + vy0 * dt - 0.5 * p.g * dt * dt;
+    if (s.vz > 0 && (requiredAccel < -p.g || ground < projected)) {
       s.grounded = false;
       s.vy = vy0;
       s.y = Math.max(ground, s.y + vy0 * dt);
