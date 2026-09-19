@@ -29,7 +29,7 @@ export class TerrainManager {
   update(z: number): void {
     const current = this.track.segmentIndexAt(Math.max(0, z));
     const wanted = new Set<number>();
-    for (let i = current - BEHIND; i <= current + AHEAD; i++) if (i >= 0) wanted.add(i);
+    for (let i = current - BEHIND; i <= current + AHEAD; i++) if (i >= -BEHIND) wanted.add(i);
     for (const [index, mesh] of this.meshes) {
       if (!wanted.has(index)) {
         this.scene.remove(mesh);
@@ -55,10 +55,10 @@ export class TerrainManager {
   }
 
   private build(index: number): THREE.Mesh {
-    const seg = this.track.getSegment(index);
+    const z0 = index * SEGMENT_LENGTH;
     const geo = new THREE.PlaneGeometry(TRACK_WIDTH + SIDE_MARGIN * 2, SEGMENT_LENGTH, WIDTH_SEGMENTS, LENGTH_SEGMENTS);
     geo.rotateX(-Math.PI / 2);
-    const centerWorldZ = -(seg.z0 + SEGMENT_LENGTH / 2);
+    const centerWorldZ = -(z0 + SEGMENT_LENGTH / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
