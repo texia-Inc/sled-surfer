@@ -192,6 +192,22 @@ describe('createTrack', () => {
     expect(sawZero).toBe(true);
   });
 
+  it('scales bump amplitude down near the start and back up with distance', () => {
+    const t = createTrack(3);
+    const seg0 = t.getSegment(0);
+    const maxRawAmp = TRACK_GEN.bumpAmpMin + TRACK_GEN.bumpAmpRange;
+    for (const b of seg0.bumps) {
+      expect(b.amp).toBeLessThanOrEqual(maxRawAmp * TRACK_GEN.bumpAmpStartScale + 1e-9);
+    }
+    let sawFullScale = false;
+    for (let i = 6; i < 20 && !sawFullScale; i++) {
+      for (const b of t.getSegment(i).bumps) {
+        if (b.amp > TRACK_GEN.bumpAmpMin) sawFullScale = true;
+      }
+    }
+    expect(sawFullScale).toBe(true);
+  });
+
   it('isOnPad is true inside the pad and false just outside on each axis', () => {
     const pad = { id: 'p', x: 0, z: 10, length: 6, width: 4 };
     expect(isOnPad(0, 10, pad)).toBe(true);

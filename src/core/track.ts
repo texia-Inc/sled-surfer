@@ -10,6 +10,7 @@ export const RAMP_HEIGHT = 3;
 
 export const TRACK_GEN = {
   bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.5, bumpAmpRange: 2.5,
+  bumpAmpStartScale: 0.35, bumpAmpFullDistance: 1200,
   iceChance: 0.35, iceLengthMin: 30, iceLengthRange: 50,
   rampChance: 0.5, rampStartMargin: 30, rampEndMargin: 40,
   corridorRange: 8,
@@ -89,9 +90,13 @@ function generateSegment(seed: number, index: number): Segment {
 
   const bumps: Bump[] = [];
   const bumpCount = TRACK_GEN.bumpCountMin + Math.floor(rng() * TRACK_GEN.bumpCountRange);
+  // Early bumps are gentler so a fresh launch doesn't stall climbing them; scale ramps up to
+  // full size by bumpAmpFullDistance. This only scales the drawn value, not the rng draw itself,
+  // so the draw order/count is unchanged.
+  const ampScale = Math.min(1, TRACK_GEN.bumpAmpStartScale + z0 / TRACK_GEN.bumpAmpFullDistance);
   for (let i = 0; i < bumpCount; i++) {
     const width = TRACK_GEN.bumpWidthMin + rng() * TRACK_GEN.bumpWidthRange;
-    const amp = TRACK_GEN.bumpAmpMin + rng() * TRACK_GEN.bumpAmpRange;
+    const amp = (TRACK_GEN.bumpAmpMin + rng() * TRACK_GEN.bumpAmpRange) * ampScale;
     const z = z0 + width + rng() * (SEGMENT_LENGTH - 2 * width);
     bumps.push({ z, amp, width });
   }

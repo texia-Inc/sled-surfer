@@ -84,7 +84,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
 };
 
 export const LAUNCH = {
-  baseSpeed: 18,
+  baseSpeed: 22,
   angleDeg: 25,
   minPullFactor: 0.4,
   rocketsPerRun: 1,
