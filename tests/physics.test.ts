@@ -9,7 +9,10 @@ import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 const DT = 1 / 120;
 
 function emptySegment(index: number): Segment {
-  return { index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [], obstacles: [], coins: [], boosts: [] };
+  return {
+    index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [],
+    obstacles: [], coins: [], boosts: [], zone: 'snowfield', gate: null, decor: [],
+  };
 }
 
 /** 高さ関数から TrackQuery を作る。傾きは physics と同じ後退差分 */
@@ -67,6 +70,13 @@ describe('grounded motion', () => {
     const snow = run(grounded({ vz: 10 }), flat, 1);
     const ice = run(grounded({ vz: 10 }), fakeTrack(() => 0, 'ice'), 1);
     expect(ice.vz).toBeGreaterThan(snow.vz);
+    expect(snow.vz).toBeLessThan(10);
+  });
+
+  it('decelerates less on road than on snow', () => {
+    const snow = run(grounded({ vz: 10 }), flat, 1);
+    const road = run(grounded({ vz: 10 }), fakeTrack(() => 0, 'road'), 1);
+    expect(road.vz).toBeGreaterThan(snow.vz);
     expect(snow.vz).toBeLessThan(10);
   });
 

@@ -2,6 +2,7 @@ export interface PhysicsParams {
   g: number;
   muSnow: number;
   muIce: number;
+  muRoad: number;
   kDrag: number;
   kSteer: number;
   rocketAccel: number;
@@ -47,6 +48,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
    * そこから先は雪自体が加速要因になる。氷 (0.02) とブーストパッドは常に速度を回復させる */
   muSnow: 0.08,
   muIce: 0.02,
+  muRoad: 0.035,
   kDrag: 0.0008,
   kSteer: 0.25,
   rocketAccel: 15,
@@ -91,7 +93,7 @@ export const LAUNCH = {
   rocketsPerRun: 1,
 };
 
-export const GOAL = { initial: 1000, growth: 1.5, roundTo: 50 };
+export const GOAL = { initial: 600, stepAfter: 1000, roundTo: 50 };
 
 export const ECONOMY = { distanceCoinDivisor: 10, goalBonusMul: 2 };
 

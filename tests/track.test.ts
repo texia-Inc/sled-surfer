@@ -3,6 +3,7 @@ import {
   createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_HEIGHT, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
 } from '../src/core/track';
+import { zoneAt, ZONES } from '../src/core/zones';
 
 describe('mulberry32', () => {
   it('is deterministic and in [0,1)', () => {
@@ -62,9 +63,11 @@ describe('createTrack', () => {
   it('increases obstacle count with distance', () => {
     const t = createTrack(5);
     expect(t.getSegment(0).obstacles.length).toBe(TRACK_GEN.obstacleBase);
-    expect(t.getSegment(10).obstacles.length).toBe(
-      TRACK_GEN.obstacleBase + Math.floor((10 * SEGMENT_LENGTH) / TRACK_GEN.obstaclePerMeters),
+    const z10 = 10 * SEGMENT_LENGTH;
+    const expected10 = Math.round(
+      (TRACK_GEN.obstacleBase + Math.floor(z10 / TRACK_GEN.obstaclePerMeters)) * zoneAt(z10).obstacleDensityMul,
     );
+    expect(t.getSegment(10).obstacles.length).toBe(expected10);
     expect(t.getSegment(40).obstacles.length).toBe(TRACK_GEN.obstacleMax);
   });
 
@@ -216,5 +219,57 @@ describe('createTrack', () => {
     expect(isOnPad(-2.1, 12, pad)).toBe(false);
     expect(isOnPad(0, 9.9, pad)).toBe(false);
     expect(isOnPad(0, 16, pad)).toBe(false);
+  });
+});
+
+describe('zone-aware generation', () => {
+  const cityZone = ZONES.find((z) => z.id === 'city')!;
+
+  it('a city segment has road surface, no ice, and only city obstacle kinds', () => {
+    const t = createTrack(3);
+    const seg = t.getSegment(6);
+    expect(seg.z0).toBe(1200);
+    expect(t.surfaceAt(seg.z0 + SEGMENT_LENGTH / 2)).toBe('road');
+    expect(seg.ice.length).toBe(0);
+    expect(seg.obstacles.length).toBeGreaterThan(0);
+    for (const o of seg.obstacles) {
+      expect(cityZone.obstacleKinds).toContain(o.kind);
+    }
+  });
+
+  it('a forest segment places pine decor at least decorBankMin from the centerline', () => {
+    const t = createTrack(3);
+    const seg = t.getSegment(3);
+    expect(seg.z0).toBe(600);
+    expect(seg.decor.length).toBeGreaterThan(0);
+    for (const d of seg.decor) {
+      expect(d.kind).toBe('pine');
+      expect(Math.abs(d.x)).toBeGreaterThanOrEqual(TRACK_GEN.decorBankMin);
+    }
+  });
+
+  it('a cave segment places only stalactite decor above stalactiteYMin', () => {
+    const t = createTrack(3);
+    const seg = t.getSegment(10);
+    expect(seg.z0).toBe(2000);
+    expect(seg.decor.length).toBeGreaterThan(0);
+    for (const d of seg.decor) {
+      expect(d.kind).toBe('stalactite');
+      expect(d.y).toBeGreaterThanOrEqual(TRACK_GEN.stalactiteYMin);
+    }
+  });
+
+  it('gates exist exactly at the forest/city/cave boundary segments', () => {
+    const t = createTrack(3);
+    for (let i = 0; i <= 12; i++) {
+      const seg = t.getSegment(i);
+      if (i === 3 || i === 6 || i === 10) {
+        expect(seg.gate).not.toBeNull();
+        expect(seg.gate!.z).toBe(seg.z0);
+        expect(seg.gate!.zone).toBe(zoneAt(seg.z0).id);
+      } else {
+        expect(seg.gate).toBeNull();
+      }
+    }
   });
 });

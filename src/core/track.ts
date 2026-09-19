@@ -1,7 +1,8 @@
 import type {
-  BoostPad, Bump, Coin, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
+  BoostPad, Bump, Coin, Decor, Gate, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
+import { zoneAt } from './zones';
 
 export const SEGMENT_LENGTH = 200;
 export const TRACK_WIDTH = DEFAULT_PHYSICS.trackWidth;
@@ -21,6 +22,10 @@ export const TRACK_GEN = {
   boostChance: 0.8, boostSecondChance: 0.5, boostLength: 6, boostWidth: 5,
   boostFirstZ: 60, boostMinGapFromRamp: 4,
   boostIceBandMargin: 3, boostRampPreOffsetMul: 2, boostZoneMargin: 20,
+  decorBankMin: 9, decorBankMax: 13, pineMin: 12, pineRange: 8,
+  buildingMin: 4, buildingRange: 2, buildingHeightMin: 8, buildingHeightRange: 17,
+  stalactiteMin: 6, stalactiteRange: 4, stalactiteYMin: 7, stalactiteYRange: 2,
+  decorScaleMin: 0.7, decorScaleRange: 0.9,
 } as const;
 
 const SLOPE_START = 0.06;
@@ -31,6 +36,10 @@ export const MAX_SLOPE = 1.5;
 export const CORRIDOR_HALF = 2.5;
 const OBSTACLE_MARGIN_X = 1;
 const FIRST_OBSTACLE_Z = 40;
+/** City buildings sit decorBankMin + this many metres from the centerline. */
+const BUILDING_X_OFFSET = 3;
+/** Fraction of the even z-spacing step that a building's position may jitter by. */
+const BUILDING_JITTER_FRAC = 0.3;
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -80,13 +89,16 @@ function localHeight(seg: Segment, z: number): number {
   return h;
 }
 
-const OBSTACLE_RADIUS: Record<ObstacleKind, number> = { tree: 0.8, rock: 1.0, snowman: 0.7 };
-const OBSTACLE_KINDS: ObstacleKind[] = ['tree', 'rock', 'snowman'];
+const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
+  tree: 0.8, rock: 1.0, snowman: 0.7,
+  stump: 0.7, car: 1.3, bus: 2.2, sign: 0.5, barrier: 1.2, stalagmite: 0.8, crystal: 0.9,
+};
 
 function generateSegment(seed: number, index: number): Segment {
   const rng = mulberry32(hashSeed(seed, index));
   const z0 = index * SEGMENT_LENGTH;
   const z1 = z0 + SEGMENT_LENGTH;
+  const zone = zoneAt(z0);
 
   const bumps: Bump[] = [];
   const bumpCount = TRACK_GEN.bumpCountMin + Math.floor(rng() * TRACK_GEN.bumpCountRange);
@@ -96,13 +108,13 @@ function generateSegment(seed: number, index: number): Segment {
   const ampScale = Math.min(1, TRACK_GEN.bumpAmpStartScale + z0 / TRACK_GEN.bumpAmpFullDistance);
   for (let i = 0; i < bumpCount; i++) {
     const width = TRACK_GEN.bumpWidthMin + rng() * TRACK_GEN.bumpWidthRange;
-    const amp = (TRACK_GEN.bumpAmpMin + rng() * TRACK_GEN.bumpAmpRange) * ampScale;
+    const amp = (TRACK_GEN.bumpAmpMin + rng() * TRACK_GEN.bumpAmpRange) * ampScale * zone.bumpScale;
     const z = z0 + width + rng() * (SEGMENT_LENGTH - 2 * width);
     bumps.push({ z, amp, width });
   }
 
   const ice: IceBand[] = [];
-  if (rng() < TRACK_GEN.iceChance) {
+  if (rng() < zone.iceChance) {
     const len = TRACK_GEN.iceLengthMin + rng() * TRACK_GEN.iceLengthRange;
     const start = z0 + rng() * (SEGMENT_LENGTH - len);
     ice.push({ z0: start, z1: start + len });
@@ -141,7 +153,7 @@ function generateSegment(seed: number, index: number): Segment {
   };
   const iceMargin = TRACK_GEN.boostIceBandMargin;
   const zoneMargin = TRACK_GEN.boostZoneMargin;
-  if (padRng() < TRACK_GEN.boostChance) {
+  if (padRng() < zone.boostChance) {
     const band = ice[0];
     let z: number;
     if (band && band.z1 - boostLength - iceMargin >= band.z0 + iceMargin) {
@@ -160,7 +172,10 @@ function generateSegment(seed: number, index: number): Segment {
 
   const corridorX = (rng() - 0.5) * TRACK_GEN.corridorRange;
   const obstacles: Obstacle[] = [];
-  const count = Math.min(TRACK_GEN.obstacleMax, TRACK_GEN.obstacleBase + Math.floor(z0 / TRACK_GEN.obstaclePerMeters));
+  const count = Math.min(
+    TRACK_GEN.obstacleMax,
+    Math.round((TRACK_GEN.obstacleBase + Math.floor(z0 / TRACK_GEN.obstaclePerMeters)) * zone.obstacleDensityMul),
+  );
   const zMin = Math.max(z0 + 10, FIRST_OBSTACLE_Z);
   const zMax = z1 - 5;
   const halfX = TRACK_WIDTH / 2 - OBSTACLE_MARGIN_X;
@@ -168,7 +183,7 @@ function generateSegment(seed: number, index: number): Segment {
   for (let attempt = 0; attempt < obstacleAttempts && obstacles.length < count; attempt++) {
     const x = (rng() * 2 - 1) * halfX;
     const z = zMin + rng() * (zMax - zMin);
-    const kind = OBSTACLE_KINDS[Math.floor(rng() * OBSTACLE_KINDS.length)];
+    const kind = zone.obstacleKinds[Math.floor(rng() * zone.obstacleKinds.length)];
     if (Math.abs(x - corridorX) < CORRIDOR_HALF) continue;
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     const r = OBSTACLE_RADIUS[kind];
@@ -196,7 +211,45 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts };
+  const gate: Gate | null = zone.z0 === z0 && zone.z0 > 0 ? { z: z0, zone: zone.id } : null;
+
+  // Decor is purely visual (no collision) and is drawn last from the shared `rng`, after every
+  // pre-existing draw above, so it never perturbs the values covered by the determinism test.
+  const decor: Decor[] = [];
+  let dCount = 0;
+  if (zone.id === 'forest') {
+    const pineCount = TRACK_GEN.pineMin + Math.floor(rng() * TRACK_GEN.pineRange);
+    for (let k = 0; k < pineCount; k++) {
+      const side = k % 2 === 0 ? 1 : -1;
+      const bank = TRACK_GEN.decorBankMin + rng() * (TRACK_GEN.decorBankMax - TRACK_GEN.decorBankMin);
+      const z = z0 + rng() * SEGMENT_LENGTH;
+      const scale = TRACK_GEN.decorScaleMin + rng() * TRACK_GEN.decorScaleRange;
+      decor.push({ id: `${index}-d${dCount++}`, kind: 'pine', x: side * bank, z, y: 0, scale });
+    }
+  } else if (zone.id === 'city') {
+    const bankX = TRACK_GEN.decorBankMin + BUILDING_X_OFFSET;
+    for (const side of [1, -1]) {
+      const count = TRACK_GEN.buildingMin + Math.floor(rng() * TRACK_GEN.buildingRange);
+      const step = SEGMENT_LENGTH / count;
+      for (let k = 0; k < count; k++) {
+        const jitter = (rng() * 2 - 1) * step * BUILDING_JITTER_FRAC;
+        const z = z0 + step * (k + 0.5) + jitter;
+        const height = TRACK_GEN.buildingHeightMin + rng() * TRACK_GEN.buildingHeightRange;
+        decor.push({ id: `${index}-d${dCount++}`, kind: 'building', x: side * bankX, z, y: 0, scale: height });
+      }
+    }
+  } else if (zone.id === 'cave') {
+    const stalactiteCount = TRACK_GEN.stalactiteMin + Math.floor(rng() * TRACK_GEN.stalactiteRange);
+    for (let k = 0; k < stalactiteCount; k++) {
+      const x = (rng() * 2 - 1) * (TRACK_WIDTH / 2);
+      const z = z0 + rng() * SEGMENT_LENGTH;
+      const y = TRACK_GEN.stalactiteYMin + rng() * TRACK_GEN.stalactiteYRange;
+      const scale = TRACK_GEN.decorScaleMin + rng() * TRACK_GEN.decorScaleRange;
+      decor.push({ id: `${index}-d${dCount++}`, kind: 'stalactite', x, z, y, scale });
+    }
+  }
+
+  return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts, zone: zone.id, gate, decor };
 }
 
 export function isOnPad(x: number, z: number, pad: BoostPad): boolean {
@@ -230,7 +283,7 @@ export function createTrack(seed: number): Track {
   const surfaceAt = (z: number): Surface => {
     if (z < 0) return 'snow';
     const seg = getSegment(segmentIndexAt(z));
-    return seg.ice.some((b) => z >= b.z0 && z < b.z1) ? 'ice' : 'snow';
+    return seg.ice.some((b) => z >= b.z0 && z < b.z1) ? 'ice' : zoneAt(z).surface;
   };
 
   const segmentsAround = (z: number): Segment[] => {

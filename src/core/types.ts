@@ -1,7 +1,17 @@
 export type Phase = 'aim' | 'run' | 'ended' | 'results';
-export type Surface = 'snow' | 'ice';
-export type ObstacleKind = 'tree' | 'rock' | 'snowman';
+export type Surface = 'snow' | 'ice' | 'road';
+export type ObstacleKind =
+  | 'tree' | 'rock' | 'snowman'
+  | 'stump' | 'car' | 'bus' | 'sign' | 'barrier' | 'stalagmite' | 'crystal';
 export type UpgradeKind = 'slingshot' | 'sled' | 'income';
+
+export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave';
+export type DecorKind = 'pine' | 'building' | 'stalactite';
+
+/** 当たり判定なしの見た目用オブジェクト。y は地面からの高さ (stalactite の先端の基準点用)。他は 0 */
+export interface Decor { id: string; kind: DecorKind; x: number; z: number; y: number; scale: number; }
+/** ゾーン境界の門。物理には関与しない */
+export interface Gate { z: number; zone: ZoneId; }
 
 export interface Obstacle { id: string; kind: ObstacleKind; x: number; z: number; r: number; }
 /** lift: 地面からの追加高さ (m)。0 なら地面のすぐ上 */
@@ -22,6 +32,9 @@ export interface Segment {
   obstacles: Obstacle[];
   coins: Coin[];
   boosts: BoostPad[];
+  zone: ZoneId;
+  gate: Gate | null;
+  decor: Decor[];
 }
 
 /** 物理が必要とするコースの問い合わせ。テストではこれを偽装する */
@@ -82,4 +95,5 @@ export interface RunResult {
   earned: number;
   newBest: boolean;
   goalReached: boolean;
+  zoneReached: ZoneId;
 }
