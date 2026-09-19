@@ -7,6 +7,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .stat.left { left: 16px; }
 .hud .stat.right { right: 40px; text-align: right; }
 .hud .stat small { display: block; font-size: 12px; opacity: .85; font-weight: 500; }
+.hud .stat.left .speed { font-size: 18px; font-weight: 700; }
 .hud .progress { position: absolute; right: 12px; top: 90px; bottom: 120px; width: 14px; background: rgba(255,255,255,.35); border-radius: 7px; }
 .hud .progress .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ffd23f; border-radius: 7px; }
 .hud .progress .flag { position: absolute; top: -26px; left: -6px; font-size: 20px; }
@@ -15,6 +16,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .rocket:disabled { opacity: .35; }
 .hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-size: 28px; color: #ffd23f; opacity: 0; transition: opacity .2s; }
 .hud .toast.on { opacity: 1; }
+.hud .chain { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 700; color: #2bd8ff; text-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .15s, transform .15s; }
+.hud .chain.on { opacity: 1; }
+.hud .chain.pop { transform: translateX(-50%) scale(1.25); }
 .aim { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.45); }
 .aim svg { width: 120px; height: 120px; }
 .aim .pct { font-size: 26px; font-weight: 700; margin-top: -78px; }

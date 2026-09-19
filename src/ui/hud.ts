@@ -1,6 +1,9 @@
 import type { Phase, Profile, RunState } from '../core/types';
 
 const TOAST_SECONDS = 1.2;
+const CHAIN_POP_SECONDS = 0.15;
+const SPEED_WARN = 60;
+const SPEED_HOT = 100;
 
 export class Hud {
   private readonly root: HTMLElement;
@@ -11,8 +14,11 @@ export class Hud {
   private readonly pct: HTMLElement;
   private readonly rocket: HTMLButtonElement;
   private readonly toast: HTMLElement;
+  private readonly chain: HTMLElement;
   private toastUntil = 0;
   private lastLandingCount = 0;
+  private chainPopUntil = 0;
+  private lastBoostCount = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void) {
     this.root = document.createElement('div');
@@ -23,6 +29,7 @@ export class Hud {
       <div class="progress"><div class="fill"></div><div class="flag">🏁</div><div class="pct">0%</div></div>
       <button class="rocket" type="button">🚀</button>
       <div class="toast"></div>
+      <div class="chain"></div>
     `;
     parent.appendChild(this.root);
     this.dist = this.root.querySelector<HTMLElement>('.dist')!;
@@ -32,6 +39,7 @@ export class Hud {
     this.pct = this.root.querySelector<HTMLElement>('.pct')!;
     this.rocket = this.root.querySelector<HTMLButtonElement>('.rocket')!;
     this.toast = this.root.querySelector<HTMLElement>('.toast')!;
+    this.chain = this.root.querySelector<HTMLElement>('.chain')!;
     this.rocket.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       onRocket();
@@ -43,6 +51,7 @@ export class Hud {
     const speed = run ? Math.sqrt(run.vx * run.vx + run.vy * run.vy + run.vz * run.vz) * 3.6 : 0;
     this.dist.textContent = `${Math.floor(distance)} m`;
     this.speed.textContent = `${Math.floor(speed)} km/h`;
+    this.speed.style.color = speed > SPEED_HOT ? '#ff6b3d' : speed > SPEED_WARN ? '#ffd23f' : '#fff';
     this.coins.textContent = `${profile.coins}${run && phase === 'run' ? ` +${run.coinsThisRun}` : ''}`;
     const ratio = Math.min(1, distance / profile.goalDistance);
     this.fill.style.height = `${ratio * 100}%`;
@@ -57,5 +66,15 @@ export class Hud {
     }
     if (!run) this.lastLandingCount = 0;
     this.toast.classList.toggle('on', performance.now() < this.toastUntil);
+
+    const chainActive = !!run && run.boostChainTime > 0 && run.boostChain > 0;
+    if (run && run.boostCount !== this.lastBoostCount) {
+      this.lastBoostCount = run.boostCount;
+      this.chainPopUntil = performance.now() + CHAIN_POP_SECONDS * 1000;
+    }
+    if (!run) this.lastBoostCount = 0;
+    if (chainActive) this.chain.textContent = `BOOST x${run.boostChain}`;
+    this.chain.classList.toggle('on', chainActive);
+    this.chain.classList.toggle('pop', performance.now() < this.chainPopUntil);
   }
 }
