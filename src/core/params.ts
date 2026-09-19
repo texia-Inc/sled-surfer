@@ -43,7 +43,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
    * 氷・ランプ・ロケット・SLED 強化だけが加速手段になる */
   muSnow: 0.06,
   muIce: 0.02,
-  kDrag: 0.0012,
+  kDrag: 0.0016,
   kSteer: 0.25,
   rocketAccel: 22,
   rocketDuration: 1.5,
