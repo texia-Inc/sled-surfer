@@ -60,7 +60,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   collisionPushSpeed: 6,
   stunDuration: 0.5,
   obstacleClearHeight: 1.5,
-  stopSpeed: 0.8,
+  stopSpeed: 2.5,
   stopTime: 1.0,
   landingBonusPerFlip: 0.08,
   maxLandingBonus: 1.25,
