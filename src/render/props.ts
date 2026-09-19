@@ -7,6 +7,11 @@ import { TRACK_WIDTH } from '../core/track';
 const BEHIND = 1;
 const AHEAD = 3;
 const COIN_SPIN = 3;
+const PAD_TEXTURE_SIZE = 256;
+const PAD_TEXTURE_SCROLL = 1.5;
+const PAD_GLOW_SCALE = 1.15;
+const PAD_Y_OFFSET = 0.06;
+const PAD_GLOW_Y_OFFSET = 0.01;
 
 interface Bundle {
   group: THREE.Group;
@@ -23,6 +28,7 @@ export class PropManager {
   private readonly ball = new THREE.SphereGeometry(0.5, 10, 8);
   private readonly coin = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 16);
   private readonly plank = new THREE.BoxGeometry(TRACK_WIDTH, 0.4, 1);
+  private readonly padGeo = new THREE.PlaneGeometry(1, 1);
 
   private readonly matTree = new THREE.MeshLambertMaterial({ color: 0x2f8f4e, flatShading: true });
   private readonly matTrunk = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
@@ -30,10 +36,47 @@ export class PropManager {
   private readonly matSnow = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   private readonly matCoin = new THREE.MeshLambertMaterial({ color: 0xffc928, emissive: 0x553300 });
   private readonly matPlank = new THREE.MeshLambertMaterial({ color: 0xb8743a, flatShading: true });
+  private readonly padTexture = this.createPadTexture();
+  private readonly matPad = new THREE.MeshBasicMaterial({
+    color: 0x2bd8ff, transparent: true, opacity: 0.85, map: this.padTexture,
+  });
+  private readonly matPadGlow = new THREE.MeshBasicMaterial({
+    color: 0x9ff3ff, transparent: true, opacity: 0.35,
+  });
 
   constructor(private readonly scene: THREE.Scene, track: Track, private readonly params: PhysicsParams) {
     this.track = track;
     this.coin.rotateX(Math.PI / 2);
+    this.padGeo.rotateX(-Math.PI / 2);
+  }
+
+  private createPadTexture(): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = PAD_TEXTURE_SIZE;
+    c.height = PAD_TEXTURE_SIZE;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#0b4fa0';
+    ctx.fillRect(0, 0, PAD_TEXTURE_SIZE, PAD_TEXTURE_SIZE);
+    ctx.fillStyle = '#ffffff';
+    const chevronH = PAD_TEXTURE_SIZE / 4;
+    for (let i = 0; i < 3; i++) {
+      // Tip points toward the texture's top edge (y=0); repeated with wrapT so
+      // scrolling texture.offset.y downward reads as the chevrons flowing "forward".
+      const cy = PAD_TEXTURE_SIZE - i * chevronH - chevronH * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(PAD_TEXTURE_SIZE * 0.5, cy - chevronH * 0.45);
+      ctx.lineTo(PAD_TEXTURE_SIZE * 0.85, cy + chevronH * 0.35);
+      ctx.lineTo(PAD_TEXTURE_SIZE * 0.65, cy + chevronH * 0.35);
+      ctx.lineTo(PAD_TEXTURE_SIZE * 0.5, cy - chevronH * 0.05);
+      ctx.lineTo(PAD_TEXTURE_SIZE * 0.35, cy + chevronH * 0.35);
+      ctx.lineTo(PAD_TEXTURE_SIZE * 0.15, cy + chevronH * 0.35);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const texture = new THREE.CanvasTexture(c);
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 3);
+    return texture;
   }
 
   setTrack(track: Track): void {
@@ -42,6 +85,7 @@ export class PropManager {
   }
 
   update(z: number, collected: ReadonlySet<string>, dt: number): void {
+    this.padTexture.offset.y -= dt * PAD_TEXTURE_SCROLL;
     const current = this.track.segmentIndexAt(Math.max(0, z));
     const wanted = new Set<number>();
     for (let i = current - BEHIND; i <= current + AHEAD; i++) if (i >= 0) wanted.add(i);
@@ -117,6 +161,24 @@ export class PropManager {
       mesh.position.set(c.x, coinWorldY(this.track, c, this.params), -c.z);
       group.add(mesh);
       coins.set(c.id, mesh);
+    }
+
+    for (const pad of seg.boosts) {
+      const midZ = pad.z + pad.length / 2;
+      const y = this.track.heightAt(midZ) + PAD_Y_OFFSET;
+      const tilt = Math.atan(this.track.slopeAt(midZ));
+
+      const mesh = new THREE.Mesh(this.padGeo, this.matPad);
+      mesh.scale.set(pad.width, 1, pad.length);
+      mesh.position.set(pad.x, y, -midZ);
+      mesh.rotation.x = tilt;
+      group.add(mesh);
+
+      const glow = new THREE.Mesh(this.padGeo, this.matPadGlow);
+      glow.scale.set(pad.width * PAD_GLOW_SCALE, 1, pad.length * PAD_GLOW_SCALE);
+      glow.position.set(pad.x, y + PAD_GLOW_Y_OFFSET, -midZ);
+      glow.rotation.x = tilt;
+      group.add(glow);
     }
 
     return { group, coins };
