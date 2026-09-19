@@ -44,9 +44,9 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
   /** track.ts の初期基本勾配 (0.06) より大きい。新品のソリは雪上では必ず減速して
    * 短くきびきび止まり、氷 (0.02) とブーストパッドだけが速度を回復させる */
-  muSnow: 0.10,
+  muSnow: 0.11,
   muIce: 0.02,
-  kDrag: 0.0006,
+  kDrag: 0.0010,
   kSteer: 0.25,
   rocketAccel: 15,
   rocketDuration: 1.0,
@@ -71,9 +71,9 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   coinVertical: 1.5,
   frictionMul: 1,
   dragMul: 1,
-  boostAccel: 40,          // m/s² while boostTime > 0 and vz < boostSpeedCap
+  boostAccel: 35,          // m/s² while boostTime > 0 and vz < boostSpeedCap
   boostDuration: 0.8,      // seconds of thrust per pad
-  boostMinSpeed: 26,       // vz is raised to at least this on hit
+  boostMinSpeed: 24,       // vz is raised to at least this on hit
   boostGraceDuration: 1.2, // seconds: steer penalty off, friction = ice
   boostChainWindow: 3.0,   // seconds to hit the next pad to keep the chain
   boostChainStep: 0.1,     // chain multiplier = 1 + step * (chain - 1), capped

@@ -138,11 +138,11 @@ interface Profile {
 ```
 slope = dh/dz (z で数値微分)
 a_slope = -g * slope / sqrt(1 + slope^2)     // 下りで正
-a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.10（初期勾配 0.06 より大きく、新品のソリは必ず減速する）, 氷 0.02
-a_drag  = -k_drag * vz^2                     // k_drag = 0.0006
+a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.11（初期勾配 0.06 より大きく、新品のソリは必ず減速する）, 氷 0.02
+a_drag  = -k_drag * vz^2                     // k_drag = 0.0010
 a_steer = -k_steer * steer^2 * vz            // k_steer = 0.25（軽い修正はほぼ無料、フルロックで効く）
 a_rocket = (rocketTime > 0 && vz < rocketSpeedCap) ? rocketAccel : 0  // 15 m/s^2, 1.0 秒, 上限 30 m/s 未満でのみ加速（失速からの立て直し用、正味 +15 m/s 程度）
-a_boost  = (boostTime > 0 && vz < boostSpeedCap) ? boostAccel * chainMul : 0  // ブーストパッド後の推力, 上限 40 m/s 未満でのみ加速
+a_boost  = (boostTime > 0 && vz < boostSpeedCap) ? boostAccel * chainMul : 0  // 35 m/s^2, 上限 40 m/s 未満でのみ加速（ヒット時 vz は最低 24 m/s まで引き上げ）
 vz += (a_slope + a_fric + a_drag + a_steer + a_rocket + a_boost) * dt
 vx = steer * 12 * min(vz, 30) / 30              // 最大 12 m/s
 x  = clamp(x + vx * dt, -W/2, W/2)             // 端で vx を反転し 0.5 倍
