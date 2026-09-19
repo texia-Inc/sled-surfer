@@ -14,6 +14,8 @@ import { ResultsPanel } from './ui/results';
 
 const FIXED_DT = 1 / 120;
 const MAX_STEPS = 4;
+const MAX_FRAME_DT = 0.1;
+const STEER_SMOOTH_RATE = 10;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 
 function getStorage(): StorageLike | null {
@@ -24,9 +26,10 @@ function getStorage(): StorageLike | null {
   }
 }
 
-function hasWebGL(canvas: HTMLCanvasElement): boolean {
+function hasWebGL2(): boolean {
   try {
-    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+    const probe = document.createElement('canvas');
+    return !!probe.getContext('webgl2');
   } catch {
     return false;
   }
@@ -36,7 +39,7 @@ function boot(): void {
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const ui = document.getElementById('ui') as HTMLElement;
 
-  if (!hasWebGL(canvas)) {
+  if (!hasWebGL2()) {
     const msg = document.createElement('div');
     msg.className = 'fatal';
     msg.textContent = 'このブラウザでは動作しません（WebGL が必要です）';
@@ -49,7 +52,17 @@ function boot(): void {
     onProfileChange: (p) => saveProfile(storage, p),
   });
 
-  const { renderer, scene, camera } = createScene(canvas);
+  let created: ReturnType<typeof createScene>;
+  try {
+    created = createScene(canvas);
+  } catch {
+    const msg = document.createElement('div');
+    msg.className = 'fatal';
+    msg.textContent = 'このブラウザでは動作しません（WebGL が必要です）';
+    ui.appendChild(msg);
+    return;
+  }
+  const { renderer, scene, camera } = created;
   const terrain = new TerrainManager(scene, game.track);
   const props = new PropManager(scene, game.track, game.physicsParams());
   const player = new PlayerView(scene);
@@ -76,9 +89,10 @@ function boot(): void {
   let lastPhase: Phase = game.phase;
   let steerShown = 0;
   let pullShown = 0;
+  let pendingRocket = false;
 
   function frame(now: number): void {
-    const frameDt = Math.min(0.1, (now - last) / 1000);
+    const frameDt = Math.min(MAX_FRAME_DT, (now - last) / 1000);
     last = now;
     acc += frameDt;
 
@@ -95,9 +109,12 @@ function boot(): void {
       pullShown = 0;
     }
 
+    if (snap.rocket) pendingRocket = true;
+
     let steps = 0;
     while (acc >= FIXED_DT && steps < MAX_STEPS) {
-      game.update(FIXED_DT, { steer: snap.steer, rocket: snap.rocket && steps === 0 });
+      game.update(FIXED_DT, { steer: snap.steer, rocket: pendingRocket });
+      pendingRocket = false;
       acc -= FIXED_DT;
       steps += 1;
     }
@@ -113,7 +130,7 @@ function boot(): void {
     const z = run ? run.z : 0;
     const y = run ? run.y : game.track.heightAt(0);
     const rocketing = !!run && run.rocketTime > 0;
-    steerShown += (snap.steer - steerShown) * Math.min(1, frameDt * 10);
+    steerShown += (snap.steer - steerShown) * Math.min(1, frameDt * STEER_SMOOTH_RATE);
 
     terrain.update(z);
     props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt);
