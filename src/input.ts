@@ -62,7 +62,8 @@ export class InputController {
       this.pull = 0.5 - 0.5 * Math.cos((2 * Math.PI * this.gaugeTime) / KEY_GAUGE_PERIOD);
       this.pulling = true;
     }
-    if (this.phase !== 'aim' && !this.spaceHeld) {
+    if (this.phase !== 'aim') {
+      this.spaceHeld = false;
       this.pulling = false;
     }
   }
@@ -86,6 +87,7 @@ export class InputController {
   }
 
   private keyDown(e: KeyboardEvent): void {
+    if (e.code === 'Space') e.preventDefault();
     if (e.repeat) return;
     switch (e.code) {
       case 'ArrowLeft':
@@ -99,7 +101,6 @@ export class InputController {
         this.updateKeySteer();
         break;
       case 'Space':
-        e.preventDefault();
         if (this.phase === 'aim' && !this.pulling) {
           this.spaceHeld = true;
           this.gaugeTime = 0;
