@@ -9,9 +9,14 @@ const AHEAD = 3;
 const COIN_SPIN = 3;
 const PAD_TEXTURE_SIZE = 256;
 const PAD_TEXTURE_SCROLL = 1.5;
-const PAD_GLOW_SCALE = 1.15;
+const PAD_OPACITY = 0.95;
+const PAD_GLOW_SCALE = 1.25;
 const PAD_Y_OFFSET = 0.06;
 const PAD_GLOW_Y_OFFSET = 0.01;
+/** Vertical marker standing at a pad's far edge so it reads from far down the track. */
+const BEACON_HEIGHT = 7;
+const BEACON_COLOR = 0x8ff4ff;
+const BEACON_OPACITY = 0.22;
 
 interface Bundle {
   group: THREE.Group;
@@ -29,6 +34,8 @@ export class PropManager {
   private readonly coin = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 16);
   private readonly plank = new THREE.BoxGeometry(TRACK_WIDTH, 0.4, 1);
   private readonly padGeo = new THREE.PlaneGeometry(1, 1);
+  /** Unit plane left standing in the XY plane (unrotated) for pad beacons. */
+  private readonly beaconGeo = new THREE.PlaneGeometry(1, 1);
 
   private readonly matTree = new THREE.MeshLambertMaterial({ color: 0x2f8f4e, flatShading: true });
   private readonly matTrunk = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
@@ -38,10 +45,14 @@ export class PropManager {
   private readonly matPlank = new THREE.MeshLambertMaterial({ color: 0xb8743a, flatShading: true });
   private readonly padTexture = this.createPadTexture();
   private readonly matPad = new THREE.MeshBasicMaterial({
-    color: 0x2bd8ff, transparent: true, opacity: 0.85, map: this.padTexture,
+    color: 0x2bd8ff, transparent: true, opacity: PAD_OPACITY, map: this.padTexture,
   });
   private readonly matPadGlow = new THREE.MeshBasicMaterial({
     color: 0x9ff3ff, transparent: true, opacity: 0.35,
+  });
+  private readonly matBeacon = new THREE.MeshBasicMaterial({
+    color: BEACON_COLOR, transparent: true, opacity: BEACON_OPACITY,
+    side: THREE.DoubleSide, depthWrite: false,
   });
 
   constructor(private readonly scene: THREE.Scene, track: Track, private readonly params: PhysicsParams) {
@@ -179,6 +190,22 @@ export class PropManager {
       glow.position.set(pad.x, y + PAD_GLOW_Y_OFFSET, -midZ);
       glow.rotation.x = tilt;
       group.add(glow);
+
+      // Beacon: stands at the pad's far edge so the pad reads from far down the track.
+      // Left in the XY plane (no rotation) so it faces the approaching player; a second
+      // copy rotated 90 deg about Y makes it a cross-billboard readable from any angle.
+      const beaconZ = pad.z + pad.length;
+      const beaconY = this.track.heightAt(beaconZ) + BEACON_HEIGHT / 2;
+      const beacon = new THREE.Mesh(this.beaconGeo, this.matBeacon);
+      beacon.scale.set(pad.width, BEACON_HEIGHT, 1);
+      beacon.position.set(pad.x, beaconY, -beaconZ);
+      group.add(beacon);
+
+      const beaconCross = new THREE.Mesh(this.beaconGeo, this.matBeacon);
+      beaconCross.scale.set(pad.width, BEACON_HEIGHT, 1);
+      beaconCross.position.set(pad.x, beaconY, -beaconZ);
+      beaconCross.rotation.y = Math.PI / 2;
+      group.add(beaconCross);
     }
 
     return { group, coins };
