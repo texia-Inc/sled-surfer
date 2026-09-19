@@ -1,6 +1,7 @@
 import type { Profile, RunResult, UpgradeKind } from '../core/types';
 import { UPGRADE } from '../core/params';
 import { UPGRADE_LABELS, canBuy, upgradeCost } from '../core/upgrades';
+import { ZONES, zoneAt } from '../core/zones';
 
 const KINDS: UpgradeKind[] = ['slingshot', 'sled', 'income'];
 
@@ -38,11 +39,14 @@ export class ResultsPanel {
   }
 
   show(result: RunResult, profile: Profile): void {
+    const zoneReachedName = ZONES.find((z) => z.id === result.zoneReached)!.nameJa;
+    const nextGoalZoneName = zoneAt(profile.goalDistance).nameJa;
     this.summary.innerHTML = `
       <div class="row"><span>距離</span><span>${Math.floor(result.distance)} m ${result.newBest ? '<span class="badge">NEW BEST</span>' : ''}</span></div>
+      <div class="row"><span>到達</span><span>${zoneReachedName}</span></div>
       <div class="row"><span>拾ったコイン</span><span>${result.coinsCollected}</span></div>
       <div class="row"><span>距離ボーナス</span><span>${result.distanceCoins}</span></div>
-      ${result.goalReached ? '<div class="row"><span class="badge">GOAL CLEAR x2</span><span>次のゴール ' + profile.goalDistance + ' m</span></div>' : ''}
+      ${result.goalReached ? `<div class="row"><span class="badge">GOAL CLEAR x2</span><span>次のゴール ${profile.goalDistance} m (${nextGoalZoneName} へ)</span></div>` : ''}
       <div class="row total"><span>獲得</span><span>+${result.earned}</span></div>
     `;
     this.refresh(profile);

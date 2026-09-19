@@ -1,9 +1,12 @@
-import type { Phase, Profile, RunState } from '../core/types';
+import type { Phase, Profile, RunState, ZoneId } from '../core/types';
+import { ZONE_THEMES } from '../render/zoneTheme';
+import { zoneAt } from '../core/zones';
 
 const TOAST_SECONDS = 1.2;
 const CHAIN_POP_SECONDS = 0.15;
 const SPEED_WARN = 60;
 const SPEED_HOT = 100;
+const ZONE_BANNER_SECONDS = 2.0;
 
 export class Hud {
   private readonly root: HTMLElement;
@@ -15,10 +18,13 @@ export class Hud {
   private readonly rocket: HTMLButtonElement;
   private readonly toast: HTMLElement;
   private readonly chain: HTMLElement;
+  private readonly zone: HTMLElement;
   private toastUntil = 0;
   private lastLandingCount = 0;
   private chainPopUntil = 0;
   private lastBoostCount = 0;
+  private lastZone: ZoneId | null = null;
+  private zoneUntil = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void) {
     this.root = document.createElement('div');
@@ -30,6 +36,7 @@ export class Hud {
       <button class="rocket" type="button">🚀</button>
       <div class="toast"></div>
       <div class="chain"></div>
+      <div class="zone"></div>
     `;
     parent.appendChild(this.root);
     this.dist = this.root.querySelector<HTMLElement>('.dist')!;
@@ -40,6 +47,7 @@ export class Hud {
     this.rocket = this.root.querySelector<HTMLButtonElement>('.rocket')!;
     this.toast = this.root.querySelector<HTMLElement>('.toast')!;
     this.chain = this.root.querySelector<HTMLElement>('.chain')!;
+    this.zone = this.root.querySelector<HTMLElement>('.zone')!;
     this.rocket.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       onRocket();
@@ -76,5 +84,24 @@ export class Hud {
     if (chainActive) this.chain.textContent = `BOOST x${run.boostChain}`;
     this.chain.classList.toggle('on', chainActive);
     this.chain.classList.toggle('pop', performance.now() < this.chainPopUntil);
+
+    if (!run) {
+      this.lastZone = null;
+    } else if (phase === 'run') {
+      const z = zoneAt(run.distance);
+      if (this.lastZone === null) {
+        // First frame of the run: adopt the starting zone silently (no banner for it).
+        this.lastZone = z.id;
+      } else if (z.id !== this.lastZone) {
+        this.lastZone = z.id;
+        this.zone.textContent = z.nameJa;
+        const gateColor = ZONE_THEMES[z.id].gate.getStyle();
+        this.zone.style.color = '#fff';
+        this.zone.style.textShadow = `0 0 12px ${gateColor}, 0 0 24px ${gateColor}`;
+        this.zone.style.borderBottomColor = gateColor;
+        this.zoneUntil = performance.now() + ZONE_BANNER_SECONDS * 1000;
+      }
+    }
+    this.zone.classList.toggle('on', performance.now() < this.zoneUntil);
   }
 }

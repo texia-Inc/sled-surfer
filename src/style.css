@@ -19,6 +19,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .chain { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 700; color: #2bd8ff; text-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .15s, transform .15s; }
 .hud .chain.on { opacity: 1; }
 .hud .chain.pop { transform: translateX(-50%) scale(1.25); }
+.hud .zone { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); font-size: 40px; font-weight: 700; letter-spacing: 0.2em; color: #fff; border-bottom: 3px solid transparent; padding-bottom: 6px; opacity: 0; transition: opacity .3s; }
+.hud .zone.on { opacity: 1; }
 .aim { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.45); }
 .aim svg { width: 120px; height: 120px; }
 .aim .pct { font-size: 26px; font-weight: 700; margin-top: -78px; }

@@ -1,4 +1,5 @@
 import './style.css';
+import * as THREE from 'three';
 import { Game } from './core/game';
 import { loadProfile, saveProfile, type StorageLike } from './core/save';
 import type { Phase } from './core/types';
@@ -9,6 +10,7 @@ import { TerrainManager } from './render/terrain';
 import { PropManager } from './render/props';
 import { PlayerView } from './render/player';
 import { Effects } from './render/effects';
+import { blendedThemeColor, themeAt } from './render/zoneTheme';
 import { Hud } from './ui/hud';
 import { AimGauge } from './ui/aim';
 import { ResultsPanel } from './ui/results';
@@ -21,6 +23,7 @@ const SHAKE_BOOST = 0.6;
 const SHAKE_LANDING = 0.5;
 const SHAKE_STUN = 1.0;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
+const FOG_LERP_RATE = 2;
 
 function getStorage(): StorageLike | null {
   try {
@@ -66,7 +69,9 @@ function boot(): void {
     ui.appendChild(msg);
     return;
   }
-  const { renderer, scene, camera } = created;
+  const { renderer, scene, camera, fog } = created;
+  const skyTmp = new THREE.Color();
+  const fogTmp = new THREE.Color();
   const terrain = new TerrainManager(scene, game.track);
   const props = new PropManager(scene, game.track, game.physicsParams());
   const player = new PlayerView(scene);
@@ -155,6 +160,13 @@ function boot(): void {
       lastLandingCountShake = 0;
       lastStunTime = 0;
     }
+
+    (scene.background as THREE.Color).copy(blendedThemeColor(z, (t) => t.sky, skyTmp));
+    fog.color.copy(blendedThemeColor(z, (t) => t.fog, fogTmp));
+    const fogTarget = themeAt(z);
+    const fogK = Math.min(1, frameDt * FOG_LERP_RATE);
+    fog.near += (fogTarget.fogNear - fog.near) * fogK;
+    fog.far += (fogTarget.fogFar - fog.far) * fogK;
 
     terrain.update(z);
     props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt);

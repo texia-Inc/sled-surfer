@@ -4,6 +4,7 @@ export interface SceneBundle {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
+  fog: THREE.Fog;
 }
 
 const SKY = 0x8ecdf5;
@@ -15,7 +16,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 60, 220);
+  const fog = new THREE.Fog(SKY, 60, 220);
+  scene.fog = fog;
 
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
   scene.add(camera);
@@ -31,5 +33,5 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
     camera.updateProjectionMatrix();
   });
 
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, fog };
 }
