@@ -8,6 +8,7 @@ import { snapCamera, updateCamera } from './render/camera';
 import { TerrainManager } from './render/terrain';
 import { PropManager } from './render/props';
 import { PlayerView } from './render/player';
+import { Effects } from './render/effects';
 import { Hud } from './ui/hud';
 import { AimGauge } from './ui/aim';
 import { ResultsPanel } from './ui/results';
@@ -66,6 +67,7 @@ function boot(): void {
   const terrain = new TerrainManager(scene, game.track);
   const props = new PropManager(scene, game.track, game.physicsParams());
   const player = new PlayerView(scene);
+  const effects = new Effects(scene, camera);
   const input = new InputController(canvas);
   const hud = new Hud(ui, () => input.pressRocket());
   const aim = new AimGauge(ui);
@@ -78,11 +80,11 @@ function boot(): void {
       game.restart();
       terrain.setTrack(game.track);
       props.setTrack(game.track);
-      snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false });
+      snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0 });
     },
   });
 
-  snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false });
+  snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0 });
 
   let last = performance.now();
   let acc = 0;
@@ -90,6 +92,9 @@ function boot(): void {
   let steerShown = 0;
   let pullShown = 0;
   let pendingRocket = false;
+  let lastBoostCount = 0;
+  let lastLandingCountShake = 0;
+  let lastStunTime = 0;
 
   function frame(now: number): void {
     const frameDt = Math.min(MAX_FRAME_DT, (now - last) / 1000);
@@ -130,7 +135,23 @@ function boot(): void {
     const z = run ? run.z : 0;
     const y = run ? run.y : game.track.heightAt(0);
     const rocketing = !!run && run.rocketTime > 0;
+    const boosting = !!run && run.boostTime > 0;
+    const speed = run ? Math.hypot(run.vx, run.vy, run.vz) : 0;
     steerShown += (snap.steer - steerShown) * Math.min(1, frameDt * STEER_SMOOTH_RATE);
+
+    let shake = 0;
+    if (run) {
+      if (run.boostCount > lastBoostCount) shake = 0.6;
+      if (run.landingCount > lastLandingCountShake) shake = 0.5;
+      if (run.stunTime > 0 && lastStunTime === 0) shake = 1.0;
+      lastBoostCount = run.boostCount;
+      lastLandingCountShake = run.landingCount;
+      lastStunTime = run.stunTime;
+    } else {
+      lastBoostCount = 0;
+      lastLandingCountShake = 0;
+      lastStunTime = 0;
+    }
 
     terrain.update(z);
     props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt);
@@ -143,7 +164,17 @@ function boot(): void {
       pullBack: pullShown,
       rocketing,
     });
-    updateCamera(camera, { x, y, z, rocketing }, frameDt);
+    effects.update({
+      x, y, z,
+      speed,
+      grounded: run ? run.grounded : true,
+      boosting,
+      boostHits: run ? run.boostCount : 0,
+      landingCount: run ? run.landingCount : 0,
+      hitCount: 0,
+      dt: frameDt,
+    });
+    updateCamera(camera, { x, y, z, rocketing, boosting, shake }, frameDt);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);

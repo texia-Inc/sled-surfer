@@ -19,6 +19,7 @@ export const TRACK_GEN = {
   rampExclusionBefore: 3, rampExclusionAfter: 6,
   boostChance: 0.6, boostSecondChance: 0.35, boostLength: 6, boostWidth: 4,
   boostFirstZ: 60, boostMinGapFromRamp: 4,
+  boostIceBandMargin: 3, boostRampPreOffsetMul: 2, boostZoneMargin: 20,
 } as const;
 
 const SLOPE_START = 0.06;
@@ -133,19 +134,21 @@ function generateSegment(seed: number, index: number): Segment {
     const x = padXMin + padRng() * (padXMax - padXMin);
     boosts.push({ id: `${index}-b${k}`, x, z, length: boostLength, width: boostWidth });
   };
+  const iceMargin = TRACK_GEN.boostIceBandMargin;
+  const zoneMargin = TRACK_GEN.boostZoneMargin;
   if (padRng() < TRACK_GEN.boostChance) {
     const band = ice[0];
     let z: number;
-    if (band && band.z1 - boostLength - 3 >= band.z0 + 3) {
-      z = band.z0 + 3 + padRng() * (band.z1 - boostLength - 3 - (band.z0 + 3));
+    if (band && band.z1 - boostLength - iceMargin >= band.z0 + iceMargin) {
+      z = band.z0 + iceMargin + padRng() * (band.z1 - boostLength - iceMargin - (band.z0 + iceMargin));
     } else if (ramps.length > 0) {
-      z = ramps[0].z - 2 * boostLength;
+      z = ramps[0].z - TRACK_GEN.boostRampPreOffsetMul * boostLength;
     } else {
-      z = z0 + 20 + padRng() * (z1 - 20 - (z0 + 20));
+      z = z0 + zoneMargin + padRng() * (z1 - zoneMargin - (z0 + zoneMargin));
     }
     tryAddPad(z, 0);
     if (boosts.length > 0 && padRng() < TRACK_GEN.boostSecondChance) {
-      const z2 = z0 + 20 + padRng() * (z1 - 20 - (z0 + 20));
+      const z2 = z0 + zoneMargin + padRng() * (z1 - zoneMargin - (z0 + zoneMargin));
       tryAddPad(z2, 1);
     }
   }
