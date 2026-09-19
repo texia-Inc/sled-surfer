@@ -35,15 +35,18 @@ export interface PhysicsParams {
   boostChainWindow: number;
   boostChainStep: number;
   boostChainMax: number;
+  rocketSpeedCap: number;
+  boostSpeedCap: number;
+  landingBonusSpeedCap: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
-  /** track.ts の初期基本勾配 (0.06) と同じ値。新品のソリは雪上で収支ゼロになり、
-   * 氷・ランプ・ロケット・SLED 強化だけが加速手段になる */
-  muSnow: 0.06,
+  /** track.ts の初期基本勾配 (0.06) より大きい。新品のソリは雪上では必ず減速して
+   * 短くきびきび止まり、氷 (0.02) とブーストパッドだけが速度を回復させる */
+  muSnow: 0.10,
   muIce: 0.02,
-  kDrag: 0.0016,
+  kDrag: 0.0006,
   kSteer: 0.25,
   rocketAccel: 22,
   rocketDuration: 1.5,
@@ -68,13 +71,16 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   coinVertical: 1.5,
   frictionMul: 1,
   dragMul: 1,
-  boostAccel: 30,          // m/s² while boostTime > 0
+  boostAccel: 40,          // m/s² while boostTime > 0 and vz < boostSpeedCap
   boostDuration: 0.8,      // seconds of thrust per pad
-  boostMinSpeed: 22,       // vz is raised to at least this on hit
+  boostMinSpeed: 26,       // vz is raised to at least this on hit
   boostGraceDuration: 1.2, // seconds: steer penalty off, friction = ice
   boostChainWindow: 3.0,   // seconds to hit the next pad to keep the chain
   boostChainStep: 0.1,     // chain multiplier = 1 + step * (chain - 1), capped
   boostChainMax: 3,        // chain count cap (multiplier max = 1 + 0.1*2 = 1.2)
+  rocketSpeedCap: 35,        // rocket thrust applies only while vz is below this
+  boostSpeedCap: 40,         // boost thrust applies only while vz is below this
+  landingBonusSpeedCap: 32,  // landing bonus never raises vz above this
 };
 
 export const LAUNCH = {

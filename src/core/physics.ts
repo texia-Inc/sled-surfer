@@ -60,7 +60,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     s.rocketLeft -= 1;
     s.rocketTime = p.rocketDuration;
   }
-  const rocketA = s.rocketTime > 0 ? p.rocketAccel : 0;
+  const rocketA = s.rocketTime > 0 && s.vz < p.rocketSpeedCap ? p.rocketAccel : 0;
   s.rocketTime = Math.max(0, s.rocketTime - dt);
   const wasStunned = s.stunTime > 0;
   s.stunTime = Math.max(0, s.stunTime - dt);
@@ -69,7 +69,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   s.boostGrace = Math.max(0, s.boostGrace - dt);
   s.boostChainTime = Math.max(0, s.boostChainTime - dt);
   if (s.boostChainTime === 0) s.boostChain = 0;
-  const boostA = s.boostTime > 0 ? p.boostAccel * boostChainMul(s, p) : 0;
+  const boostA = s.boostTime > 0 && s.vz < p.boostSpeedCap ? p.boostAccel * boostChainMul(s, p) : 0;
 
   const drag = -p.kDrag * p.dragMul * s.vz * Math.abs(s.vz);
 
@@ -118,7 +118,8 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
       s.grounded = true;
       if (s.airTime >= p.minAirTimeForBonus && s.flips >= 1) {
         const bonus = Math.min(1 + p.landingBonusPerFlip * s.flips, p.maxLandingBonus);
-        s.vz *= bonus;
+        const boosted = Math.min(s.vz * bonus, p.landingBonusSpeedCap);
+        if (boosted > s.vz) { s.vz = boosted; }
         s.lastLandingBonus = bonus;
         s.landingCount += 1;
       }

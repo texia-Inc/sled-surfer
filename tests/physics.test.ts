@@ -120,6 +120,33 @@ describe('air', () => {
     expect(s.lastLandingBonus).toBeGreaterThan(1);
   });
 
+  it('caps the landing bonus at landingBonusSpeedCap', () => {
+    const s = grounded({ vz: 31 });
+    s.grounded = false;
+    s.y = 8;
+    s.vy = 0;
+    for (let i = 0; i < 240 && !s.grounded; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, flat, DEFAULT_PHYSICS);
+    }
+    expect(s.grounded).toBe(true);
+    expect(s.vz).toBeLessThanOrEqual(DEFAULT_PHYSICS.landingBonusSpeedCap);
+    expect(s.vz).toBeGreaterThan(31);
+  });
+
+  it('never reduces speed when the bonus multiplier would exceed the cap', () => {
+    const s = grounded({ vz: 40 });
+    s.grounded = false;
+    s.y = 8;
+    s.vy = 0;
+    for (let i = 0; i < 240 && !s.grounded; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, flat, DEFAULT_PHYSICS);
+    }
+    expect(s.grounded).toBe(true);
+    expect(s.vz).toBeLessThanOrEqual(40);
+    expect(s.vz).toBeGreaterThan(38);
+    expect(s.landingCount).toBe(1);
+  });
+
   it('gives no bonus for a short hop', () => {
     const s = grounded({ vz: 10 });
     s.grounded = false;
@@ -279,6 +306,15 @@ describe('boost pads', () => {
     expect(s.boostCount).toBe(0);
     expect(s.triggeredPadIds.has('p1')).toBe(false);
   });
+
+  it('boost thrust adds no speed once vz is at or above boostSpeedCap', () => {
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 45, z: 10 });
+    run(s, track, 0.3);
+    expect(s.vz).toBeLessThanOrEqual(45 + 1e-9);
+  });
 });
 
 describe('rocket', () => {
@@ -290,5 +326,10 @@ describe('rocket', () => {
     run(s, flat, 1, 0, true);
     expect(s.vz).toBeGreaterThan(10);
     expect(s.rocketLeft).toBe(0);
+  });
+
+  it('adds no speed once vz is at or above rocketSpeedCap', () => {
+    const s = run(grounded({ vz: 50 }), flat, 0.5, 0, true);
+    expect(s.vz).toBeLessThanOrEqual(50);
   });
 });
