@@ -1,5 +1,5 @@
 import type { Input, Phase, Profile, RunResult, RunState, Track, UpgradeKind } from './types';
-import { DEFAULT_PHYSICS, ECONOMY, GOAL, LAUNCH, type PhysicsParams } from './params';
+import { DEFAULT_PHYSICS, ECONOMY, GOAL, LAUNCH, RUN, type PhysicsParams } from './params';
 import { createRunState, launchSpeed, stepRun } from './physics';
 import { createTrack } from './track';
 import { buy as buyUpgrade, incomeMul, sledMul, slingshotMul } from './upgrades';
@@ -56,7 +56,7 @@ export class Game {
     this.baseSeed = baseSeed;
     this.track = createTrack(baseSeed);
     this.onProfileChange = opts.onProfileChange ?? (() => {});
-    this.endedDelay = opts.endedDelay ?? 1.0;
+    this.endedDelay = opts.endedDelay ?? RUN.endedDelaySeconds;
   }
 
   physicsParams(): PhysicsParams {
@@ -109,7 +109,7 @@ export class Game {
   restart(): void {
     if (this.phase !== 'results') return;
     this.runCount += 1;
-    this.track = createTrack(this.baseSeed + this.runCount * 7919);
+    this.track = createTrack(this.baseSeed + this.runCount * RUN.seedStride);
     this.run = null;
     this.lastResult = null;
     this.phase = 'aim';

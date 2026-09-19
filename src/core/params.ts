@@ -72,6 +72,8 @@ export const GOAL = { initial: 1000, growth: 1.5, roundTo: 50 };
 
 export const ECONOMY = { distanceCoinDivisor: 10, goalBonusMul: 2 };
 
+export const RUN = { seedStride: 7919, endedDelaySeconds: 1.0 };
+
 export const UPGRADE = {
   maxLevel: 10,
   baseCost: { slingshot: 40, sled: 50, income: 60 },
