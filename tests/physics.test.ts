@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createRunState, stepRun, coinWorldY, launchSpeed } from '../src/core/physics';
+import {
+  createRunState, stepRun, coinWorldY, launchSpeed, boostChainMul,
+} from '../src/core/physics';
 import { DEFAULT_PHYSICS, LAUNCH } from '../src/core/params';
 import { createTrack, SLOPE_STEP, MAX_SLOPE } from '../src/core/track';
 import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
@@ -257,20 +259,27 @@ describe('boost pads', () => {
     expect(Math.abs(withSteer.vz - withoutSteer.vz)).toBeLessThan(1e-6);
   });
 
-  it('two pads hit within the chain window give chain 2 and more speed than a single pad', () => {
-    const segSingle = emptySegment(0);
-    segSingle.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
-    const trackSingle = fakeTrack(() => 0, 'snow', segSingle);
-    const single = run(grounded({ vz: 10, z: 8 }), trackSingle, 1);
-
-    const segChain = emptySegment(0);
-    segChain.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
-    segChain.boosts.push({ id: 'p2', x: 0, z: 25, length: 6, width: 4 });
-    const trackChain = fakeTrack(() => 0, 'snow', segChain);
-    const chain = run(grounded({ vz: 10, z: 8 }), trackChain, 1);
-
-    expect(chain.boostChain).toBe(2);
-    expect(chain.vz).toBeGreaterThan(single.vz);
+  it('a second pad within the chain window raises boostChain to 2 with a bigger min-speed kick, right at the hit', () => {
+    // Asserted at the step where the hit lands, not after a fixed 1 s window: with the
+    // held-speed tuning (lower muSnow/kDrag), both a single-pad and a chained run reach
+    // boostSpeedCap well inside 1 s, so a later-window comparison no longer shows the
+    // chain effect. It IS observable right at the hit, where boostMinSpeed is scaled by
+    // boostChainMul (see stepRun's pad-hit branch in src/core/physics.ts).
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    seg.boosts.push({ id: 'p2', x: 0, z: 25, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let count = 0;
+    for (let i = 0; i < 300 && count < 2; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      count = s.boostCount;
+    }
+    expect(count).toBe(2);
+    expect(s.boostChain).toBe(2);
+    const mul = boostChainMul(s, DEFAULT_PHYSICS);
+    expect(mul).toBeGreaterThan(1);
+    expect(s.vz).toBeGreaterThanOrEqual(DEFAULT_PHYSICS.boostMinSpeed * mul);
   });
 
   it('a pad hit after the chain window resets the chain to 1', () => {
