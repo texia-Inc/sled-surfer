@@ -7,6 +7,15 @@ export const TRACK_WIDTH = 16;
 export const RAMP_LENGTH = 12;
 export const RAMP_HEIGHT = 3;
 
+export const TRACK_GEN = {
+  bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.5, bumpAmpRange: 2.5,
+  iceChance: 0.35, iceLengthMin: 30, iceLengthRange: 50,
+  rampChance: 0.5, rampStartMargin: 30, rampEndMargin: 40,
+  corridorRange: 8,
+  coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXRange: 6, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
+  archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
+} as const;
+
 const SLOPE_START = 0.06;
 const SLOPE_END = 0.024;
 const SLOPE_FLATTEN_DIST = 3000;
@@ -73,28 +82,28 @@ function generateSegment(seed: number, index: number): Segment {
   const z1 = z0 + SEGMENT_LENGTH;
 
   const bumps: Bump[] = [];
-  const bumpCount = 2 + Math.floor(rng() * 2);
+  const bumpCount = TRACK_GEN.bumpCountMin + Math.floor(rng() * TRACK_GEN.bumpCountRange);
   for (let i = 0; i < bumpCount; i++) {
-    const width = 15 + rng() * 15;
-    const amp = 1.5 + rng() * 2.5;
+    const width = TRACK_GEN.bumpWidthMin + rng() * TRACK_GEN.bumpWidthRange;
+    const amp = TRACK_GEN.bumpAmpMin + rng() * TRACK_GEN.bumpAmpRange;
     const z = z0 + width + rng() * (SEGMENT_LENGTH - 2 * width);
     bumps.push({ z, amp, width });
   }
 
   const ice: IceBand[] = [];
-  if (rng() < 0.35) {
-    const len = 30 + rng() * 50;
+  if (rng() < TRACK_GEN.iceChance) {
+    const len = TRACK_GEN.iceLengthMin + rng() * TRACK_GEN.iceLengthRange;
     const start = z0 + rng() * (SEGMENT_LENGTH - len);
     ice.push({ z0: start, z1: start + len });
   }
 
   const ramps: Ramp[] = [];
-  if (rng() < 0.5) {
-    const rz = z0 + 30 + rng() * (SEGMENT_LENGTH - 30 - 40);
+  if (rng() < TRACK_GEN.rampChance) {
+    const rz = z0 + TRACK_GEN.rampStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.rampStartMargin - TRACK_GEN.rampEndMargin);
     ramps.push({ z: rz, length: RAMP_LENGTH, height: RAMP_HEIGHT });
   }
 
-  const corridorX = (rng() - 0.5) * 8;
+  const corridorX = (rng() - 0.5) * TRACK_GEN.corridorRange;
   const obstacles: Obstacle[] = [];
   const count = Math.min(14, 3 + Math.floor(z0 / 400));
   const zMin = Math.max(z0 + 10, FIRST_OBSTACLE_Z);
@@ -110,21 +119,21 @@ function generateSegment(seed: number, index: number): Segment {
   }
 
   const coins: Coin[] = [];
-  for (let line = 0; line < 2; line++) {
-    const n = 5 + Math.floor(rng() * 4);
-    const x = (rng() * 2 - 1) * 6;
-    const startZ = z0 + 5 + rng() * (SEGMENT_LENGTH - 20);
+  for (let line = 0; line < TRACK_GEN.coinLines; line++) {
+    const n = TRACK_GEN.coinsPerLineMin + Math.floor(rng() * TRACK_GEN.coinsPerLineRange);
+    const x = (rng() * 2 - 1) * TRACK_GEN.coinXRange;
+    const startZ = z0 + TRACK_GEN.coinLineStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.coinLineStartMargin - TRACK_GEN.coinLineEndMargin);
     for (let k = 0; k < n; k++) {
-      coins.push({ id: `${index}-l${line}-${k}`, x, z: startZ + k * 1.5, lift: 0 });
+      coins.push({ id: `${index}-l${line}-${k}`, x, z: startZ + k * TRACK_GEN.coinSpacing, lift: 0 });
     }
   }
   for (const r of ramps) {
-    for (let k = 0; k < 7; k++) {
+    for (let k = 0; k < TRACK_GEN.archCoins; k++) {
       coins.push({
         id: `${index}-a${k}`,
         x: 0,
-        z: r.z + r.length + 4 + k * 2.5,
-        lift: 2 + 4 * Math.sin((Math.PI * k) / 6),
+        z: r.z + r.length + TRACK_GEN.archStartOffset + k * TRACK_GEN.archSpacing,
+        lift: TRACK_GEN.archLiftBase + TRACK_GEN.archLiftAmp * Math.sin((Math.PI * k) / 6),
       });
     }
   }
