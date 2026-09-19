@@ -1,16 +1,16 @@
 import type { Coin, Input, RunState, TrackQuery } from './types';
-import { LAUNCH, type PhysicsParams } from './params';
+import { DEFAULT_PHYSICS, LAUNCH, type PhysicsParams } from './params';
 
 export function launchSpeed(pull: number, slingshotMul: number): number {
   const p = Math.max(0, Math.min(1, pull));
   return LAUNCH.baseSpeed * (LAUNCH.minPullFactor + (1 - LAUNCH.minPullFactor) * p) * slingshotMul;
 }
 
-export function createRunState(opts: { v0: number; angleDeg: number; rockets: number; groundY: number }): RunState {
+export function createRunState(opts: { v0: number; angleDeg: number; rockets: number; groundY: number }, p: PhysicsParams = DEFAULT_PHYSICS): RunState {
   const a = (opts.angleDeg * Math.PI) / 180;
   return {
     x: 0,
-    y: opts.groundY + 0.05,
+    y: opts.groundY + p.spawnGroundOffset,
     z: 0,
     vx: 0,
     vy: opts.v0 * Math.sin(a),
@@ -108,10 +108,10 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   const half = p.trackWidth / 2 - p.sledRadius;
   if (s.x > half) {
     s.x = half;
-    s.vx = -Math.abs(s.vx) * 0.5;
+    s.vx = -Math.abs(s.vx) * p.wallBounceDamping;
   } else if (s.x < -half) {
     s.x = -half;
-    s.vx = Math.abs(s.vx) * 0.5;
+    s.vx = Math.abs(s.vx) * p.wallBounceDamping;
   }
 
   const groundHere = track.heightAt(s.z);

@@ -10,6 +10,8 @@ export interface PhysicsParams {
   lateralRefSpeed: number;
   trackWidth: number;
   sledRadius: number;
+  spawnGroundOffset: number;
+  wallBounceDamping: number;
   collisionSpeedMul: number;
   collisionPushSpeed: number;
   stunDuration: number;
@@ -40,6 +42,8 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   lateralRefSpeed: 30,
   trackWidth: 16,
   sledRadius: 0.6,
+  spawnGroundOffset: 0.05,
+  wallBounceDamping: 0.5,
   collisionSpeedMul: 0.6,
   collisionPushSpeed: 6,
   stunDuration: 0.5,
