@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import type { Segment, Track } from '../core/types';
+import type { Decor, Gate, Segment, Track, ZoneId } from '../core/types';
 import type { PhysicsParams } from '../core/params';
 import { coinWorldY } from '../core/physics';
 import { TRACK_WIDTH } from '../core/track';
+import { ZONES } from '../core/zones';
+import { ZONE_THEMES } from './zoneTheme';
 
 const BEHIND = 1;
 const AHEAD = 3;
@@ -17,6 +19,39 @@ const PAD_GLOW_Y_OFFSET = 0.01;
 const BEACON_HEIGHT = 7;
 const BEACON_COLOR = 0x8ff4ff;
 const BEACON_OPACITY = 0.22;
+
+// --- New obstacle geometry constants ---
+const STUMP_RADIUS = 0.5;
+const STUMP_HEIGHT = 0.8;
+const CAR_SIZE = { w: 1.8, h: 1.2, d: 3.6 };
+const CAR_PALETTE = [0xd23c3c, 0x3c6cd2, 0xc7c9cc, 0x2f6b45];
+const BUS_SIZE = { w: 2.4, h: 2.6, d: 8 };
+const SIGN_POLE_RADIUS = 0.08;
+const SIGN_POLE_HEIGHT = 2.4;
+const SIGN_BOARD = { w: 0.9, h: 0.6, d: 0.1 };
+const BARRIER_SIZE = { w: 2.4, h: 1.0, d: 0.3 };
+const BARRIER_STRIPE = { w: 2.4, h: 0.22, d: 0.32 };
+const STALAGMITE_RADIUS = 0.7;
+const STALAGMITE_HEIGHT = 2.4;
+const CRYSTAL_RADIUS = 0.8;
+
+// --- Decor geometry constants ---
+const BUILDING_SIZE = { w: 7, d: 7 };
+const BUILDING_ROOF = { w: 7.2, h: 0.6, d: 7.2 };
+const STALACTITE_RADIUS = 0.6;
+const STALACTITE_HEIGHT = 2.4;
+
+// --- Gate geometry constants ---
+const GATE_POST_RADIUS = 0.25;
+const GATE_POST_HEIGHT = 5;
+const GATE_POST_X_OFFSET = 0.5;
+const GATE_BANNER_HEIGHT = 1.2;
+const GATE_BANNER_DEPTH = 0.3;
+const GATE_BANNER_Y = 5;
+const GATE_NAME_W = 512;
+const GATE_NAME_H = 96;
+const GATE_NAME_PLANE_H = 1.1;
+const GATE_NAME_Z_OFFSET = 0.2;
 
 interface Bundle {
   group: THREE.Group;
@@ -37,6 +72,27 @@ export class PropManager {
   /** Unit plane left standing in the XY plane (unrotated) for pad beacons. */
   private readonly beaconGeo = new THREE.PlaneGeometry(1, 1);
 
+  // --- New obstacle geometries ---
+  private readonly stumpGeo = new THREE.CylinderGeometry(STUMP_RADIUS, STUMP_RADIUS, STUMP_HEIGHT, 8);
+  private readonly carGeo = new THREE.BoxGeometry(CAR_SIZE.w, CAR_SIZE.h, CAR_SIZE.d);
+  private readonly busGeo = new THREE.BoxGeometry(BUS_SIZE.w, BUS_SIZE.h, BUS_SIZE.d);
+  private readonly signPoleGeo = new THREE.CylinderGeometry(SIGN_POLE_RADIUS, SIGN_POLE_RADIUS, SIGN_POLE_HEIGHT, 8);
+  private readonly signBoardGeo = new THREE.BoxGeometry(SIGN_BOARD.w, SIGN_BOARD.h, SIGN_BOARD.d);
+  private readonly barrierGeo = new THREE.BoxGeometry(BARRIER_SIZE.w, BARRIER_SIZE.h, BARRIER_SIZE.d);
+  private readonly barrierStripeGeo = new THREE.BoxGeometry(BARRIER_STRIPE.w, BARRIER_STRIPE.h, BARRIER_STRIPE.d);
+  private readonly stalagmiteGeo = new THREE.ConeGeometry(STALAGMITE_RADIUS, STALAGMITE_HEIGHT, 7);
+  private readonly crystalGeo = new THREE.OctahedronGeometry(CRYSTAL_RADIUS, 0);
+
+  // --- Decor geometries (shared unit shapes, scaled per-instance) ---
+  private readonly buildingGeo = new THREE.BoxGeometry(BUILDING_SIZE.w, 1, BUILDING_SIZE.d);
+  private readonly buildingRoofGeo = new THREE.BoxGeometry(BUILDING_ROOF.w, BUILDING_ROOF.h, BUILDING_ROOF.d);
+  private readonly stalactiteGeo = new THREE.ConeGeometry(STALACTITE_RADIUS, STALACTITE_HEIGHT, 7);
+
+  // --- Gate geometries ---
+  private readonly gatePostGeo = new THREE.CylinderGeometry(GATE_POST_RADIUS, GATE_POST_RADIUS, GATE_POST_HEIGHT, 8);
+  private readonly gateBannerGeo = new THREE.BoxGeometry(TRACK_WIDTH + 1, GATE_BANNER_HEIGHT, GATE_BANNER_DEPTH);
+  private readonly gateNameGeo = new THREE.PlaneGeometry(TRACK_WIDTH, GATE_NAME_PLANE_H);
+
   private readonly matTree = new THREE.MeshLambertMaterial({ color: 0x2f8f4e, flatShading: true });
   private readonly matTrunk = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
   private readonly matRock = new THREE.MeshLambertMaterial({ color: 0x8b8f99, flatShading: true });
@@ -54,6 +110,30 @@ export class PropManager {
     color: BEACON_COLOR, transparent: true, opacity: BEACON_OPACITY,
     side: THREE.DoubleSide, depthWrite: false,
   });
+
+  // --- New obstacle materials ---
+  private readonly matStump = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
+  private readonly matCarPalette = CAR_PALETTE.map(
+    (color) => new THREE.MeshLambertMaterial({ color, flatShading: true }),
+  );
+  private readonly matBus = new THREE.MeshLambertMaterial({ color: 0xf2c40f, flatShading: true });
+  private readonly matSignPole = new THREE.MeshLambertMaterial({ color: 0x8b8f99, flatShading: true });
+  private readonly matSignBoard = new THREE.MeshLambertMaterial({ color: 0xd23c3c, flatShading: true });
+  private readonly matBarrier = new THREE.MeshLambertMaterial({ color: 0xff8c1a, flatShading: true });
+  private readonly matBarrierStripe = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+  private readonly matStalagmite = new THREE.MeshLambertMaterial({ color: 0x5c6b7a, flatShading: true });
+  private readonly matCrystal = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
+
+  // --- Decor materials (pine reuses the tree materials; stalactite reuses stalagmite's) ---
+  private readonly matBuilding = new THREE.MeshLambertMaterial({ color: 0x5c6878, flatShading: true });
+  private readonly matBuildingRoof = new THREE.MeshLambertMaterial({ color: 0x3c4552, flatShading: true });
+
+  // --- Gate materials (one per zone, keyed by the zone the gate leads into) ---
+  private readonly matGatePost = new THREE.MeshLambertMaterial({ color: 0xdedede, flatShading: true });
+  private readonly matGateBanner = new Map<ZoneId, THREE.MeshLambertMaterial>(
+    ZONES.map((z) => [z.id, new THREE.MeshLambertMaterial({ color: ZONE_THEMES[z.id].gate, flatShading: true })]),
+  );
+  private readonly gateNameMaterials = new Map<ZoneId, THREE.MeshBasicMaterial>();
 
   constructor(private readonly scene: THREE.Scene, track: Track, private readonly params: PhysicsParams) {
     this.track = track;
@@ -145,6 +225,39 @@ export class PropManager {
         rock.position.y = 0.6;
         rock.rotation.set(0.3, o.z, 0.2);
         holder.add(rock);
+      } else if (o.kind === 'stump') {
+        const stump = new THREE.Mesh(this.stumpGeo, this.matStump);
+        stump.position.y = STUMP_HEIGHT / 2;
+        holder.add(stump);
+      } else if (o.kind === 'car') {
+        const idx = Math.abs(Math.floor(o.z)) % this.matCarPalette.length;
+        const car = new THREE.Mesh(this.carGeo, this.matCarPalette[idx]);
+        car.position.y = CAR_SIZE.h / 2;
+        holder.add(car);
+      } else if (o.kind === 'bus') {
+        const bus = new THREE.Mesh(this.busGeo, this.matBus);
+        bus.position.y = BUS_SIZE.h / 2;
+        holder.add(bus);
+      } else if (o.kind === 'sign') {
+        const pole = new THREE.Mesh(this.signPoleGeo, this.matSignPole);
+        pole.position.y = SIGN_POLE_HEIGHT / 2;
+        const board = new THREE.Mesh(this.signBoardGeo, this.matSignBoard);
+        board.position.y = SIGN_POLE_HEIGHT - SIGN_BOARD.h / 2;
+        holder.add(pole, board);
+      } else if (o.kind === 'barrier') {
+        const barrier = new THREE.Mesh(this.barrierGeo, this.matBarrier);
+        barrier.position.y = BARRIER_SIZE.h / 2;
+        const stripe = new THREE.Mesh(this.barrierStripeGeo, this.matBarrierStripe);
+        stripe.position.y = BARRIER_SIZE.h - BARRIER_STRIPE.h / 2;
+        holder.add(barrier, stripe);
+      } else if (o.kind === 'stalagmite') {
+        const stalagmite = new THREE.Mesh(this.stalagmiteGeo, this.matStalagmite);
+        stalagmite.position.y = STALAGMITE_HEIGHT / 2;
+        holder.add(stalagmite);
+      } else if (o.kind === 'crystal') {
+        const crystal = new THREE.Mesh(this.crystalGeo, this.matCrystal);
+        crystal.position.y = CRYSTAL_RADIUS;
+        holder.add(crystal);
       } else {
         const base = new THREE.Mesh(this.ball, this.matSnow);
         base.position.y = 0.5;
@@ -208,6 +321,77 @@ export class PropManager {
       group.add(beaconCross);
     }
 
+    for (const d of seg.decor) this.buildDecor(group, d);
+    if (seg.gate) this.buildGate(group, seg.gate);
+
     return { group, coins };
+  }
+
+  private buildDecor(group: THREE.Group, d: Decor): void {
+    const ground = this.track.heightAt(d.z);
+    if (d.kind === 'pine') {
+      const holder = new THREE.Group();
+      holder.position.set(d.x, ground, -d.z);
+      holder.scale.setScalar(d.scale);
+      const trunk = new THREE.Mesh(this.treeTrunk, this.matTrunk);
+      trunk.position.y = 0.4;
+      const top = new THREE.Mesh(this.treeTop, this.matTree);
+      top.position.y = 0.8 + 1.2;
+      holder.add(trunk, top);
+      group.add(holder);
+    } else if (d.kind === 'building') {
+      const body = new THREE.Mesh(this.buildingGeo, this.matBuilding);
+      body.scale.y = d.scale;
+      body.position.set(d.x, ground + d.scale / 2, -d.z);
+      group.add(body);
+      const roof = new THREE.Mesh(this.buildingRoofGeo, this.matBuildingRoof);
+      roof.position.set(d.x, ground + d.scale + BUILDING_ROOF.h / 2, -d.z);
+      group.add(roof);
+    } else if (d.kind === 'stalactite') {
+      const stalactite = new THREE.Mesh(this.stalactiteGeo, this.matStalagmite);
+      stalactite.scale.setScalar(d.scale);
+      stalactite.rotation.x = Math.PI;
+      stalactite.position.set(d.x, ground + d.y, -d.z);
+      group.add(stalactite);
+    }
+  }
+
+  private getGateNameMaterial(zone: ZoneId): THREE.MeshBasicMaterial {
+    let mat = this.gateNameMaterials.get(zone);
+    if (mat) return mat;
+    const zoneDef = ZONES.find((z) => z.id === zone)!;
+    const c = document.createElement('canvas');
+    c.width = GATE_NAME_W;
+    c.height = GATE_NAME_H;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = `#${ZONE_THEMES[zone].gate.getHexString()}`;
+    ctx.fillRect(0, 0, GATE_NAME_W, GATE_NAME_H);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(zoneDef.nameJa, GATE_NAME_W / 2, GATE_NAME_H / 2);
+    const texture = new THREE.CanvasTexture(c);
+    mat = new THREE.MeshBasicMaterial({ map: texture });
+    this.gateNameMaterials.set(zone, mat);
+    return mat;
+  }
+
+  private buildGate(group: THREE.Group, gate: Gate): void {
+    const ground = this.track.heightAt(gate.z);
+    const postX = TRACK_WIDTH / 2 + GATE_POST_X_OFFSET;
+    for (const side of [1, -1]) {
+      const post = new THREE.Mesh(this.gatePostGeo, this.matGatePost);
+      post.position.set(side * postX, ground + GATE_POST_HEIGHT / 2, -gate.z);
+      group.add(post);
+    }
+    const bannerMat = this.matGateBanner.get(gate.zone)!;
+    const banner = new THREE.Mesh(this.gateBannerGeo, bannerMat);
+    banner.position.set(0, ground + GATE_BANNER_Y, -gate.z);
+    group.add(banner);
+
+    const name = new THREE.Mesh(this.gateNameGeo, this.getGateNameMaterial(gate.zone));
+    name.position.set(0, ground + GATE_BANNER_Y, -gate.z + GATE_NAME_Z_OFFSET);
+    group.add(name);
   }
 }
