@@ -11,14 +11,14 @@ export const RAMP_HEIGHT = 3;
 export const TRACK_GEN = {
   bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.5, bumpAmpRange: 2.5,
   bumpAmpStartScale: 0.35, bumpAmpFullDistance: 1200,
-  iceChance: 0.35, iceLengthMin: 30, iceLengthRange: 50,
+  iceChance: 0.5, iceLengthMin: 40, iceLengthRange: 60,
   rampChance: 0.5, rampStartMargin: 30, rampEndMargin: 40,
   corridorRange: 8,
   coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXRange: 6, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
   archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
   obstacleBase: 3, obstaclePerMeters: 400, obstacleMax: 14, obstacleAttemptsPerSlot: 10,
   rampExclusionBefore: 3, rampExclusionAfter: 6,
-  boostChance: 0.6, boostSecondChance: 0.35, boostLength: 6, boostWidth: 4,
+  boostChance: 0.8, boostSecondChance: 0.5, boostLength: 6, boostWidth: 5,
   boostFirstZ: 60, boostMinGapFromRamp: 4,
   boostIceBandMargin: 3, boostRampPreOffsetMul: 2, boostZoneMargin: 20,
 } as const;

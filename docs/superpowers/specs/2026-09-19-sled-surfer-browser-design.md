@@ -138,8 +138,8 @@ interface Profile {
 ```
 slope = dh/dz (z で数値微分)
 a_slope = -g * slope / sqrt(1 + slope^2)     // 下りで正
-a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.11（初期勾配 0.06 より大きく、新品のソリは必ず減速する）, 氷 0.02
-a_drag  = -k_drag * vz^2                     // k_drag = 0.0010
+a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.08（初期勾配 0.06 よりわずかに大きいだけで、新品のソリはゆっくり失速する）, 氷 0.02
+a_drag  = -k_drag * vz^2                     // k_drag = 0.0008
 a_steer = -k_steer * steer^2 * vz            // k_steer = 0.25（軽い修正はほぼ無料、フルロックで効く）
 a_rocket = (rocketTime > 0 && vz < rocketSpeedCap) ? rocketAccel : 0  // 15 m/s^2, 1.0 秒, 上限 30 m/s 未満でのみ加速（失速からの立て直し用、正味 +15 m/s 程度）
 a_boost  = (boostTime > 0 && vz < boostSpeedCap) ? boostAccel * chainMul : 0  // 35 m/s^2, 上限 40 m/s 未満でのみ加速（ヒット時 vz は最低 24 m/s まで引き上げ）
@@ -172,7 +172,7 @@ SLED 強化は `mu` を段階ごとに 3% 減、`k_drag` を 3% 減する。速�
 - 区間長 200 m。`seed` と区間番号から乱数を作り決定的に生成
 - 各区間の要素:
   - 高さ: 基本勾配は 0 m で -0.06、3000 m で -0.024 まで直線的に緩くなる（強化なしでは必ず止まる）。これに振幅 1.5〜4 m の緩い起伏を 2〜3 個重ねる
-  - 氷帯: 確率 0.35 で長さ 30〜80 m
+  - 氷帯: 確率 0.5 で長さ 40〜100 m
   - ランプ: 確率 0.5 で 1 個。長さ 12 m、高さ 3 m の上向き斜面で終端が段差
   - 障害物: 区間ごとに `3 + floor(距離 / 400)` 個（上限 14）。木、岩、雪だるま。中央付近は 1 本の通路を必ず残す
   - コイン: 直線列（5〜8 枚、1.5 m 間隔）2 本と、ランプ後方にアーチ 1 本

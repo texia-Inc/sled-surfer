@@ -42,11 +42,12 @@ export interface PhysicsParams {
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
-  /** track.ts の初期基本勾配 (0.06) より大きい。新品のソリは雪上では必ず減速して
-   * 短くきびきび止まり、氷 (0.02) とブーストパッドだけが速度を回復させる */
-  muSnow: 0.11,
+  /** track.ts の初期基本勾配 (0.06) よりわずかに大きいだけ。新品のソリは雪上でも
+   * ゆっくりとしか失速せず、SLED 強化（-3%/段階）でレベル7頃には勾配を下回り、
+   * そこから先は雪自体が加速要因になる。氷 (0.02) とブーストパッドは常に速度を回復させる */
+  muSnow: 0.08,
   muIce: 0.02,
-  kDrag: 0.0010,
+  kDrag: 0.0008,
   kSteer: 0.25,
   rocketAccel: 15,
   rocketDuration: 1.0,
