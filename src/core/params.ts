@@ -48,8 +48,8 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   muIce: 0.02,
   kDrag: 0.0006,
   kSteer: 0.25,
-  rocketAccel: 22,
-  rocketDuration: 1.5,
+  rocketAccel: 15,
+  rocketDuration: 1.0,
   maxLateral: 12,
   lateralRefSpeed: 30,
   trackWidth: 16,
@@ -78,7 +78,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   boostChainWindow: 3.0,   // seconds to hit the next pad to keep the chain
   boostChainStep: 0.1,     // chain multiplier = 1 + step * (chain - 1), capped
   boostChainMax: 3,        // chain count cap (multiplier max = 1 + 0.1*2 = 1.2)
-  rocketSpeedCap: 35,        // rocket thrust applies only while vz is below this
+  rocketSpeedCap: 30,        // rocket thrust applies only while vz is below this
   boostSpeedCap: 40,         // boost thrust applies only while vz is below this
   landingBonusSpeedCap: 32,  // landing bonus never raises vz above this
 };

@@ -141,14 +141,14 @@ a_slope = -g * slope / sqrt(1 + slope^2)     // 下りで正
 a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.10（初期勾配 0.06 より大きく、新品のソリは必ず減速する）, 氷 0.02
 a_drag  = -k_drag * vz^2                     // k_drag = 0.0006
 a_steer = -k_steer * steer^2 * vz            // k_steer = 0.25（軽い修正はほぼ無料、フルロックで効く）
-a_rocket = (rocketTime > 0 && vz < rocketSpeedCap) ? rocketAccel : 0  // 22 m/s^2, 1.5 秒, 上限 35 m/s 未満でのみ加速
+a_rocket = (rocketTime > 0 && vz < rocketSpeedCap) ? rocketAccel : 0  // 15 m/s^2, 1.0 秒, 上限 30 m/s 未満でのみ加速（失速からの立て直し用、正味 +15 m/s 程度）
 a_boost  = (boostTime > 0 && vz < boostSpeedCap) ? boostAccel * chainMul : 0  // ブーストパッド後の推力, 上限 40 m/s 未満でのみ加速
 vz += (a_slope + a_fric + a_drag + a_steer + a_rocket + a_boost) * dt
 vx = steer * 12 * min(vz, 30) / 30              // 最大 12 m/s
 x  = clamp(x + vx * dt, -W/2, W/2)             // 端で vx を反転し 0.5 倍
 ```
 
-SLED 強化は `mu` を段階ごとに 3% 減、`k_drag` を 3% 減する。速度キック（ロケット・ブースト・着地ボーナス）はいずれも速度上限つきで、無制限に加速が積み重ならないようにする（ロケット 35 m/s、ブースト 40 m/s、着地ボーナス 32 m/s）。
+SLED 強化は `mu` を段階ごとに 3% 減、`k_drag` を 3% 減する。速度キック（ロケット・ブースト・着地ボーナス）はいずれも速度上限つきで、無制限に加速が積み重ならないようにする（ロケット 30 m/s、ブースト 40 m/s、着地ボーナス 32 m/s）。
 
 ### 5.4 離陸と空中
 
