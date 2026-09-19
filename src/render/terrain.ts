@@ -1,20 +1,27 @@
 import * as THREE from 'three';
 import type { Track } from '../core/types';
 import { SEGMENT_LENGTH, TRACK_WIDTH } from '../core/track';
+import { zoneAt } from '../core/zones';
+import { blendedThemeColor } from './zoneTheme';
 
 const SIDE_MARGIN = 8;
-const WIDTH_SEGMENTS = 12;
+const WIDTH_SEGMENTS = 24;
 const LENGTH_SEGMENTS = 200;
 const BEHIND = 1;
 const AHEAD = 3;
 
-const SNOW = new THREE.Color(0.97, 0.98, 1.0);
-const ICE = new THREE.Color(0.7, 0.88, 1.0);
-const BANK = new THREE.Color(0.82, 0.88, 0.95);
+/** City lane-marking colour and the |x| bands they occupy (metres from centerline). */
+const STRIPE_WHITE = new THREE.Color(0.95, 0.95, 0.95);
+const DASH_X_MIN = 2.3;
+const DASH_X_MAX = 2.7;
+const DASH_PERIOD = 4;
+const EDGE_X_MIN = 7.6;
+const EDGE_X_MAX = 8.0;
 
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
   private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  private readonly colorTmp = new THREE.Color();
   private track: Track;
 
   constructor(private readonly scene: THREE.Scene, track: Track) {
@@ -67,7 +74,20 @@ export class TerrainManager {
       const gz = -(centerWorldZ + lz);
       pos.setY(i, this.track.heightAt(gz));
       const onTrack = Math.abs(lx) <= TRACK_WIDTH / 2;
-      const c = !onTrack ? BANK : this.track.surfaceAt(gz) === 'ice' ? ICE : SNOW;
+      let c: THREE.Color;
+      if (!onTrack) {
+        c = blendedThemeColor(gz, (t) => t.bank, this.colorTmp);
+      } else if (this.track.surfaceAt(gz) === 'ice') {
+        c = blendedThemeColor(gz, (t) => t.ice, this.colorTmp);
+      } else {
+        c = blendedThemeColor(gz, (t) => t.ground, this.colorTmp);
+      }
+      if (onTrack && zoneAt(gz).id === 'city') {
+        const ax = Math.abs(lx);
+        const dashed = ax >= DASH_X_MIN && ax <= DASH_X_MAX && Math.floor(gz / DASH_PERIOD) % 2 === 0;
+        const edge = ax >= EDGE_X_MIN && ax <= EDGE_X_MAX;
+        if (dashed || edge) c = STRIPE_WHITE;
+      }
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
