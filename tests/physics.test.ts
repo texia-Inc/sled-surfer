@@ -198,6 +198,89 @@ describe('obstacles and coins', () => {
   });
 });
 
+describe('boost pads', () => {
+  it('hitting a pad raises vz to at least boostMinSpeed and sets boostTime/boostGrace', () => {
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let count = 0;
+    for (let i = 0; i < 60 && count === 0; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      count = s.boostCount;
+    }
+    expect(count).toBe(1);
+    expect(s.vz).toBeGreaterThanOrEqual(DEFAULT_PHYSICS.boostMinSpeed);
+    expect(s.boostTime).toBeGreaterThan(0);
+    expect(s.boostGrace).toBeGreaterThan(0);
+  });
+
+  it('does not trigger the same pad twice', () => {
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = run(grounded({ vz: 10, z: 8 }), track, 5);
+    expect(s.boostCount).toBe(1);
+    expect(s.triggeredPadIds.has('p1')).toBe(true);
+  });
+
+  it('while boostGrace > 0, full steer does not slow the sled compared with no steer', () => {
+    const withoutSteer = run(grounded({ vz: 15, boostGrace: 999 }), flat, 0.5, 0);
+    const withSteer = run(grounded({ vz: 15, boostGrace: 999 }), flat, 0.5, 1);
+    expect(Math.abs(withSteer.vz - withoutSteer.vz)).toBeLessThan(1e-6);
+  });
+
+  it('two pads hit within the chain window give chain 2 and more speed than a single pad', () => {
+    const segSingle = emptySegment(0);
+    segSingle.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    const trackSingle = fakeTrack(() => 0, 'snow', segSingle);
+    const single = run(grounded({ vz: 10, z: 8 }), trackSingle, 1);
+
+    const segChain = emptySegment(0);
+    segChain.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    segChain.boosts.push({ id: 'p2', x: 0, z: 25, length: 6, width: 4 });
+    const trackChain = fakeTrack(() => 0, 'snow', segChain);
+    const chain = run(grounded({ vz: 10, z: 8 }), trackChain, 1);
+
+    expect(chain.boostChain).toBe(2);
+    expect(chain.vz).toBeGreaterThan(single.vz);
+  });
+
+  it('a pad hit after the chain window resets the chain to 1', () => {
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    seg.boosts.push({ id: 'p2', x: 0, z: 25, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let count = 0;
+    for (let i = 0; i < 60 && count === 0; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      count = s.boostCount;
+    }
+    expect(s.boostChain).toBe(1);
+    s.boostChainTime = 0; // simulate the chain window having fully elapsed before p2
+    count = s.boostCount;
+    for (let i = 0; i < 180 && s.boostCount === count; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    }
+    expect(s.boostCount).toBe(count + 1);
+    expect(s.boostChain).toBe(1);
+  });
+
+  it('does not trigger a pad while airborne above it', () => {
+    const seg = emptySegment(0);
+    seg.boosts.push({ id: 'p1', x: 0, z: 10, length: 6, width: 4 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    s.grounded = false;
+    s.y = 3;
+    s.vy = 0;
+    run(s, track, 0.5);
+    expect(s.boostCount).toBe(0);
+    expect(s.triggeredPadIds.has('p1')).toBe(false);
+  });
+});
+
 describe('rocket', () => {
   it('fires once and adds speed on flat ground', () => {
     const s = grounded({ vz: 10 });

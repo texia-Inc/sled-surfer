@@ -1,4 +1,5 @@
 import type { Coin, Input, RunState, TrackQuery } from './types';
+import { isOnPad } from './track';
 import { DEFAULT_PHYSICS, LAUNCH, type PhysicsParams } from './params';
 
 export function launchSpeed(pull: number, slingshotMul: number): number {
@@ -28,7 +29,18 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     ended: false,
     lastLandingBonus: 0,
     landingCount: 0,
+    boostTime: 0,
+    boostGrace: 0,
+    boostChain: 0,
+    boostChainTime: 0,
+    boostCount: 0,
+    triggeredPadIds: new Set<string>(),
   };
+}
+
+/** Chain speed multiplier used both to scale boostMinSpeed on a new hit and the HUD readout. 1 when no chain is active. */
+export function boostChainMul(s: RunState, p: PhysicsParams): number {
+  return s.boostChain > 0 ? 1 + p.boostChainStep * (s.boostChain - 1) : 1;
 }
 
 export function coinWorldY(track: TrackQuery, coin: Coin, p: PhysicsParams): number {
@@ -53,15 +65,22 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   const wasStunned = s.stunTime > 0;
   s.stunTime = Math.max(0, s.stunTime - dt);
 
+  s.boostTime = Math.max(0, s.boostTime - dt);
+  s.boostGrace = Math.max(0, s.boostGrace - dt);
+  s.boostChainTime = Math.max(0, s.boostChainTime - dt);
+  if (s.boostChainTime === 0) s.boostChain = 0;
+  const boostA = s.boostTime > 0 ? p.boostAccel * boostChainMul(s, p) : 0;
+
   const drag = -p.kDrag * p.dragMul * s.vz * Math.abs(s.vz);
 
   if (s.grounded) {
     const slope0 = track.slopeAt(s.z);
-    const mu = (track.surfaceAt(s.z) === 'ice' ? p.muIce : p.muSnow) * p.frictionMul;
+    const onIce = s.boostGrace > 0 || track.surfaceAt(s.z) === 'ice';
+    const mu = (onIce ? p.muIce : p.muSnow) * p.frictionMul;
     const aSlope = (-p.g * slope0) / Math.sqrt(1 + slope0 * slope0);
     const aFric = s.vz > 0 ? -p.g * mu : 0;
-    const aSteer = -p.kSteer * steer * steer * s.vz;
-    s.vz += (aSlope + aFric + drag + aSteer + rocketA) * dt;
+    const aSteer = s.boostGrace > 0 ? 0 : -p.kSteer * steer * steer * s.vz;
+    s.vz += (aSlope + aFric + drag + aSteer + rocketA + boostA) * dt;
     if (s.vz < 0) s.vz = 0;
     if (!wasStunned) {
       s.vx = (steer * p.maxLateral * Math.min(s.vz, p.lateralRefSpeed)) / p.lateralRefSpeed;
@@ -86,7 +105,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     }
   } else {
     s.vy -= p.g * dt;
-    s.vz += (drag + rocketA) * dt;
+    s.vz += (drag + rocketA + boostA) * dt;
     if (s.vz < 0) s.vz = 0;
     s.z += s.vz * dt;
     s.y += s.vy * dt;
@@ -119,6 +138,27 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
 
   const groundHere = track.heightAt(s.z);
   const segments = track.segmentsAround(s.z);
+
+  // Pads only trigger while rolling on the ground (unlike obstacles, which also catch a low
+  // hop); a run can be on at most one pad per step, so stop at the first fresh hit.
+  if (s.grounded && s.y - groundHere < p.obstacleClearHeight) {
+    let padHit = false;
+    for (const seg of segments) {
+      for (const pad of seg.boosts) {
+        if (s.triggeredPadIds.has(pad.id) || !isOnPad(s.x, s.z, pad)) continue;
+        s.triggeredPadIds.add(pad.id);
+        s.boostChain = Math.min(p.boostChainMax, s.boostChain + 1);
+        s.boostChainTime = p.boostChainWindow;
+        s.boostTime = p.boostDuration;
+        s.boostGrace = p.boostGraceDuration;
+        s.vz = Math.max(s.vz, p.boostMinSpeed * boostChainMul(s, p));
+        s.boostCount += 1;
+        padHit = true;
+        break;
+      }
+      if (padHit) break;
+    }
+  }
 
   if (s.stunTime <= 0 && s.y - groundHere < p.obstacleClearHeight) {
     for (const seg of segments) {
