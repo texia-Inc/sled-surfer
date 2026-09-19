@@ -59,7 +59,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     const mu = (track.surfaceAt(s.z) === 'ice' ? p.muIce : p.muSnow) * p.frictionMul;
     const aSlope = (-p.g * slope0) / Math.sqrt(1 + slope0 * slope0);
     const aFric = s.vz > 0 ? -p.g * mu : 0;
-    const aSteer = -p.kSteer * Math.abs(steer) * s.vz;
+    const aSteer = -p.kSteer * steer * steer * s.vz;
     s.vz += (aSlope + aFric + drag + aSteer + rocketA) * dt;
     if (s.vz < 0) s.vz = 0;
     if (!wasStunned) {

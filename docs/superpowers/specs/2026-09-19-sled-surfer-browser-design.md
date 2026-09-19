@@ -138,9 +138,9 @@ interface Profile {
 ```
 slope = dh/dz (z で数値微分)
 a_slope = -g * slope / sqrt(1 + slope^2)     // 下りで正
-a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.05, 氷 0.02
-a_drag  = -k_drag * vz^2                     // k_drag = 0.0009
-a_steer = -k_steer * |steer| * vz            // k_steer = 0.35
+a_fric  = -g * mu(surface) * sign(vz)        // 雪 0.06（初期勾配と同じ）, 氷 0.02
+a_drag  = -k_drag * vz^2                     // k_drag = 0.0012
+a_steer = -k_steer * steer^2 * vz            // k_steer = 0.25（軽い修正はほぼ無料、フルロックで効く）
 a_rocket = rocketTime > 0 ? rocketAccel : 0  // 22 m/s^2, 1.5 秒
 vz += (a_slope + a_fric + a_drag + a_steer + a_rocket) * dt
 vx = steer * 12 * min(vz, 30) / 30              // 最大 12 m/s
@@ -215,7 +215,7 @@ earned = floor((coinsThisRun + distance / 10) * incomeMul(level) * (goalReached 
 ## 8. 入力
 
 - キーボード: `←/→` または `A/D` で `steer`、`Space` でロケット。発射は `Space` 長押しで往復ゲージ、離して発射
-- マウス/タッチ: 発射は画面をドラッグして下へ引き、離す。走行中は画面左右のタッチ位置で `steer`（中央からのオフセット、-1..1）。ロケットは画面上部のボタン
+- マウス/タッチ: 発射は画面をドラッグして下へ引き、離す。走行中は画面左右のタッチ位置で `steer`（中央からのオフセット、-1..1）。ロケットは画面右下のボタン
 - `input.ts` は両方を統合し、毎フレーム `Input` を返す
 
 ## 9. セーブ

@@ -32,10 +32,12 @@ export interface PhysicsParams {
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
-  muSnow: 0.05,
+  /** track.ts の初期基本勾配 (0.06) と同じ値。新品のソリは雪上で収支ゼロになり、
+   * 氷・ランプ・ロケット・SLED 強化だけが加速手段になる */
+  muSnow: 0.06,
   muIce: 0.02,
-  kDrag: 0.0009,
-  kSteer: 0.35,
+  kDrag: 0.0012,
+  kSteer: 0.25,
   rocketAccel: 22,
   rocketDuration: 1.5,
   maxLateral: 12,
