@@ -12,7 +12,7 @@ export class Hud {
   private readonly rocket: HTMLButtonElement;
   private readonly toast: HTMLElement;
   private toastUntil = 0;
-  private lastBonus = 0;
+  private lastLandingCount = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void) {
     this.root = document.createElement('div');
@@ -43,19 +43,19 @@ export class Hud {
     const speed = run ? Math.sqrt(run.vx * run.vx + run.vy * run.vy + run.vz * run.vz) * 3.6 : 0;
     this.dist.textContent = `${Math.floor(distance)} m`;
     this.speed.textContent = `${Math.floor(speed)} km/h`;
-    this.coins.textContent = `${profile.coins}${run ? ` +${run.coinsThisRun}` : ''}`;
+    this.coins.textContent = `${profile.coins}${run && phase === 'run' ? ` +${run.coinsThisRun}` : ''}`;
     const ratio = Math.min(1, distance / profile.goalDistance);
     this.fill.style.height = `${ratio * 100}%`;
     this.pct.style.bottom = `${ratio * 100}%`;
     this.pct.textContent = `${Math.floor(ratio * 100)}%`;
     this.rocket.disabled = !(phase === 'run' && run !== null && run.rocketLeft > 0);
 
-    if (run && run.lastLandingBonus > 0 && run.lastLandingBonus !== this.lastBonus) {
-      this.lastBonus = run.lastLandingBonus;
+    if (run && run.landingCount !== this.lastLandingCount) {
+      this.lastLandingCount = run.landingCount;
       this.toast.textContent = `NICE LANDING x${run.lastLandingBonus.toFixed(2)}`;
       this.toastUntil = performance.now() + TOAST_SECONDS * 1000;
     }
-    if (!run) this.lastBonus = 0;
+    if (!run) this.lastLandingCount = 0;
     this.toast.classList.toggle('on', performance.now() < this.toastUntil);
   }
 }

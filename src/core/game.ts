@@ -44,7 +44,6 @@ export class Game {
   track: Track;
   run: RunState | null = null;
   lastResult: RunResult | null = null;
-  pull = 0;
   private runCount = 0;
   private endedTimer = 0;
   private readonly baseSeed: number;
@@ -72,8 +71,7 @@ export class Game {
       angleDeg: LAUNCH.angleDeg,
       rockets: LAUNCH.rocketsPerRun,
       groundY: this.track.heightAt(0),
-    });
-    this.pull = 0;
+    }, this.physicsParams());
     this.phase = 'run';
   }
 

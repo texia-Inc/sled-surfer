@@ -54,6 +54,8 @@ export interface RunState {
   ended: boolean;
   /** 直近の着地ボーナス倍率 (演出用)。なければ 0 */
   lastLandingBonus: number;
+  /** ボーナス着地の累計回数 (HUD トースト表示のトリガー用) */
+  landingCount: number;
 }
 
 export interface Upgrades { slingshot: number; sled: number; income: number; }

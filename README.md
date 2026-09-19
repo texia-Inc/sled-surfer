@@ -13,6 +13,9 @@
 - `npm install`
 - `npm run dev` で http://localhost:5173/
 - `npm test` でロジックのテスト
+- `npm run typecheck` で型チェック
 - `npm run build` で `dist/` に出力
+
+ゲームループ: 発射→滑走→停止→コイン→強化→再挑戦、ゴール到達で次のゴールが 1.5 倍。
 
 設計: `docs/superpowers/specs/2026-09-19-sled-surfer-browser-design.md`

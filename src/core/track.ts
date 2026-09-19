@@ -1,9 +1,10 @@
 import type {
   Bump, Coin, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
 } from './types';
+import { DEFAULT_PHYSICS } from './params';
 
 export const SEGMENT_LENGTH = 200;
-export const TRACK_WIDTH = 16;
+export const TRACK_WIDTH = DEFAULT_PHYSICS.trackWidth;
 export const RAMP_LENGTH = 12;
 export const RAMP_HEIGHT = 3;
 
@@ -14,14 +15,16 @@ export const TRACK_GEN = {
   corridorRange: 8,
   coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXRange: 6, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
   archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
+  obstacleBase: 3, obstaclePerMeters: 400, obstacleMax: 14,
+  rampExclusionBefore: 3, rampExclusionAfter: 6,
 } as const;
 
 const SLOPE_START = 0.06;
 const SLOPE_END = 0.024;
 const SLOPE_FLATTEN_DIST = 3000;
-const SLOPE_STEP = 0.1;
-const MAX_SLOPE = 1.5;
-const CORRIDOR_HALF = 2.5;
+export const SLOPE_STEP = 0.1;
+export const MAX_SLOPE = 1.5;
+export const CORRIDOR_HALF = 2.5;
 const OBSTACLE_MARGIN_X = 1;
 const FIRST_OBSTACLE_Z = 40;
 
@@ -105,7 +108,7 @@ function generateSegment(seed: number, index: number): Segment {
 
   const corridorX = (rng() - 0.5) * TRACK_GEN.corridorRange;
   const obstacles: Obstacle[] = [];
-  const count = Math.min(14, 3 + Math.floor(z0 / 400));
+  const count = Math.min(TRACK_GEN.obstacleMax, TRACK_GEN.obstacleBase + Math.floor(z0 / TRACK_GEN.obstaclePerMeters));
   const zMin = Math.max(z0 + 10, FIRST_OBSTACLE_Z);
   const zMax = z1 - 5;
   const halfX = TRACK_WIDTH / 2 - OBSTACLE_MARGIN_X;
@@ -114,7 +117,7 @@ function generateSegment(seed: number, index: number): Segment {
     const z = zMin + rng() * (zMax - zMin);
     const kind = OBSTACLE_KINDS[Math.floor(rng() * OBSTACLE_KINDS.length)];
     if (Math.abs(x - corridorX) < CORRIDOR_HALF) continue;
-    if (ramps.some((r) => z >= r.z - 3 && z <= r.z + r.length + 6)) continue;
+    if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     obstacles.push({ id: `${index}-o${obstacles.length}`, kind, x, z, r: OBSTACLE_RADIUS[kind] });
   }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createTrack, baseHeight, baseSlope, mulberry32,
-  SEGMENT_LENGTH, TRACK_WIDTH, RAMP_HEIGHT,
+  SEGMENT_LENGTH, TRACK_WIDTH, RAMP_HEIGHT, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
 } from '../src/core/track';
 
 describe('mulberry32', () => {
@@ -51,7 +51,7 @@ describe('createTrack', () => {
     for (let i = 0; i < 20; i++) {
       const s = t.getSegment(i);
       for (const o of s.obstacles) {
-        expect(Math.abs(o.x - s.corridorX)).toBeGreaterThanOrEqual(2.5);
+        expect(Math.abs(o.x - s.corridorX)).toBeGreaterThanOrEqual(CORRIDOR_HALF);
         expect(Math.abs(o.x)).toBeLessThanOrEqual(TRACK_WIDTH / 2 - 1);
         expect(o.z).toBeGreaterThanOrEqual(s.z0);
         expect(o.z).toBeLessThan(s.z1);
@@ -61,9 +61,11 @@ describe('createTrack', () => {
 
   it('increases obstacle count with distance', () => {
     const t = createTrack(5);
-    expect(t.getSegment(0).obstacles.length).toBe(3);
-    expect(t.getSegment(10).obstacles.length).toBe(8);
-    expect(t.getSegment(40).obstacles.length).toBe(14);
+    expect(t.getSegment(0).obstacles.length).toBe(TRACK_GEN.obstacleBase);
+    expect(t.getSegment(10).obstacles.length).toBe(
+      TRACK_GEN.obstacleBase + Math.floor((10 * SEGMENT_LENGTH) / TRACK_GEN.obstaclePerMeters),
+    );
+    expect(t.getSegment(40).obstacles.length).toBe(TRACK_GEN.obstacleMax);
   });
 
   it('does not put obstacles on ramps', () => {
@@ -71,7 +73,7 @@ describe('createTrack', () => {
     for (let i = 0; i < 40; i++) {
       const s = t.getSegment(i);
       for (const r of s.ramps) for (const o of s.obstacles) {
-        const onRamp = o.z >= r.z - 3 && o.z <= r.z + r.length + 6;
+        const onRamp = o.z >= r.z - TRACK_GEN.rampExclusionBefore && o.z <= r.z + r.length + TRACK_GEN.rampExclusionAfter;
         expect(onRamp).toBe(false);
       }
     }
@@ -110,7 +112,7 @@ describe('createTrack', () => {
     const t = createTrack(2);
     const s = t.slopeAt(1);
     expect(s).toBeLessThan(0);
-    expect(s).toBeGreaterThanOrEqual(-1.5);
+    expect(s).toBeGreaterThanOrEqual(-MAX_SLOPE);
   });
 
   it('segmentsAround returns segments covering z +/- 10', () => {

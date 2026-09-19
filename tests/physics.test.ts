@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRunState, stepRun, coinWorldY, launchSpeed } from '../src/core/physics';
 import { DEFAULT_PHYSICS, LAUNCH } from '../src/core/params';
-import { createTrack } from '../src/core/track';
+import { createTrack, SLOPE_STEP, MAX_SLOPE } from '../src/core/track';
 import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 
 const DT = 1 / 120;
@@ -14,7 +14,7 @@ function emptySegment(index: number): Segment {
 function fakeTrack(height: (z: number) => number, surface: Surface = 'snow', seg: Segment = emptySegment(0)): TrackQuery {
   return {
     heightAt: height,
-    slopeAt: (z) => Math.max(-1.5, Math.min(1.5, (height(z) - height(z - 0.1)) / 0.1)),
+    slopeAt: (z) => Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, (height(z) - height(z - SLOPE_STEP)) / SLOPE_STEP)),
     surfaceAt: () => surface,
     segmentsAround: () => [seg],
   };

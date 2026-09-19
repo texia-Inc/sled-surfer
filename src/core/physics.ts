@@ -27,6 +27,7 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     distance: 0,
     ended: false,
     lastLandingBonus: 0,
+    landingCount: 0,
   };
 }
 
@@ -100,6 +101,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
         const bonus = Math.min(1 + p.landingBonusPerFlip * s.flips, p.maxLandingBonus);
         s.vz *= bonus;
         s.lastLandingBonus = bonus;
+        s.landingCount += 1;
       }
       s.airTime = 0;
     }
