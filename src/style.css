@@ -1,3 +1,35 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; font-family: system-ui, sans-serif; }
 #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; }
+#ui * { box-sizing: border-box; }
+.hud { position: absolute; inset: 0; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.45); font-weight: 700; }
+.hud .stat { position: absolute; top: 16px; font-size: 22px; }
+.hud .stat.left { left: 16px; }
+.hud .stat.right { right: 40px; text-align: right; }
+.hud .stat small { display: block; font-size: 12px; opacity: .85; font-weight: 500; }
+.hud .progress { position: absolute; right: 12px; top: 90px; bottom: 120px; width: 14px; background: rgba(255,255,255,.35); border-radius: 7px; }
+.hud .progress .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ffd23f; border-radius: 7px; }
+.hud .progress .flag { position: absolute; top: -26px; left: -6px; font-size: 20px; }
+.hud .progress .pct { position: absolute; left: -48px; width: 44px; text-align: right; font-size: 13px; transform: translateY(50%); }
+.hud .rocket { position: absolute; right: 16px; bottom: 24px; width: 72px; height: 72px; border-radius: 50%; border: 3px solid #fff; background: #ff6b3d; color: #fff; font-size: 28px; pointer-events: auto; cursor: pointer; }
+.hud .rocket:disabled { opacity: .35; }
+.hud .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-size: 28px; color: #ffd23f; opacity: 0; transition: opacity .2s; }
+.hud .toast.on { opacity: 1; }
+.aim { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.45); }
+.aim svg { width: 120px; height: 120px; }
+.aim .pct { font-size: 26px; font-weight: 700; margin-top: -78px; }
+.aim .hint { margin-top: 56px; font-size: 14px; }
+.panel { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,30,60,.55); pointer-events: auto; }
+.panel .card { width: min(92vw, 420px); background: #fff; border-radius: 16px; padding: 20px; color: #123; }
+.panel h2 { margin: 0 0 8px; font-size: 22px; }
+.panel .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
+.panel .row.total { font-weight: 700; font-size: 18px; border-top: 1px solid #dde; margin-top: 6px; padding-top: 8px; }
+.panel .badge { color: #e0452b; font-weight: 700; }
+.panel .shop { margin-top: 12px; display: grid; gap: 8px; }
+.panel .shop button { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: #eef3ff; font-size: 14px; cursor: pointer; }
+.panel .shop button:disabled { opacity: .45; cursor: default; }
+.panel .shop button b { font-size: 15px; }
+.panel .shop button small { display: block; font-weight: 400; color: #567; }
+.panel .retry { margin-top: 14px; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: #2f8f4e; color: #fff; font-size: 18px; font-weight: 700; cursor: pointer; }
+.hidden { display: none !important; }
+.fatal { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; background: #1b1f2a; }
