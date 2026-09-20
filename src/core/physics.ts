@@ -100,8 +100,18 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     const aSteer = s.boostGrace > 0 ? 0 : -p.kSteer * steer * steer * s.vz;
     s.vz += (aSlope + aFric + drag + aSteer + rocketA + boostA) * dt;
     if (s.vz < 0) s.vz = 0;
+
+    // Half-pipe lateral physics (terrain §5): inside a pipe, steering no longer sets vx directly
+    // - it adds a lateral accel on top of the pipe's own centring pull (-g * dh/dx, the numeric
+    // cross-section slope at the sled's current x). Outside any pipe, behaviour is unchanged.
+    const pipe = track.pipeAt(s.z);
+    const slopeX = pipe ? (track.heightAt(s.z, s.x + 0.1) - track.heightAt(s.z, s.x - 0.1)) / 0.2 : 0;
     if (!wasStunned) {
-      s.vx = (steer * p.maxLateral * Math.min(s.vz, p.lateralRefSpeed)) / p.lateralRefSpeed;
+      if (pipe) {
+        s.vx += (-p.g * slopeX + steer * p.steerAccelPipe) * dt;
+      } else {
+        s.vx = (steer * p.maxLateral * Math.min(s.vz, p.lateralRefSpeed)) / p.lateralRefSpeed;
+      }
     }
 
     const vy0 = s.vz * slope0;
@@ -111,10 +121,21 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     const ground = track.heightAt(s.z, s.x);
     const requiredAccel = (vy1 - vy0) / dt;
     const projected = s.y + vy0 * dt - 0.5 * p.g * dt * dt;
+    // Pipe-rim takeoff: near the wall, with enough upward lateral speed (vx * dh/dx), the sled
+    // launches off the rim into the air (small jump), keeping vx as usual while airborne.
+    const pipeRimTakeoff = pipe !== null
+      && Math.abs(s.x) > p.pipeRimFraction * (track.widthAt(s.z) / 2)
+      && s.vx * slopeX > p.pipeTakeoffVy;
     if (s.vz > 0 && (requiredAccel < -p.g || ground < projected)) {
       s.grounded = false;
       s.vy = vy0;
       s.y = Math.max(ground, s.y + vy0 * dt);
+      s.airTime = 0;
+      s.flips = 0;
+    } else if (pipeRimTakeoff) {
+      s.grounded = false;
+      s.vy = s.vx * slopeX;
+      s.y = ground;
       s.airTime = 0;
       s.flips = 0;
     } else {

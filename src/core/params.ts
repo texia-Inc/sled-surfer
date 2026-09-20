@@ -49,6 +49,13 @@ export interface PhysicsParams {
   breakSpeedMul: number;
   /** Coins awarded (added to coinsThisRun) for breaking a breakable obstacle. */
   breakCoinReward: number;
+  /** Lateral steering accel (m/s²) while inside a half-pipe (terrain §5) - added on top of the
+   * pipe's own centring pull, replacing the normal steer-sets-vx assignment there. */
+  steerAccelPipe: number;
+  /** Minimum upward speed (vx * dh/dx, m/s) at the pipe rim needed to take off. */
+  pipeTakeoffVy: number;
+  /** Fraction of the half-width beyond which the sled is considered at the pipe's rim. */
+  pipeRimFraction: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
@@ -99,6 +106,9 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   landingBonusSpeedCap: 32,  // landing bonus never raises vz above this
   breakSpeedMul: 0.85,
   breakCoinReward: 2,
+  steerAccelPipe: 18,
+  pipeTakeoffVy: 4,
+  pipeRimFraction: 0.85,
 };
 
 export const LAUNCH = {

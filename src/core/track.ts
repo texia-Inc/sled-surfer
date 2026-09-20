@@ -55,6 +55,10 @@ export const TRACK_GEN = {
    * the track into a left lane (coins) and a right lane (a small ramp + ice). */
   splitChance: 0.3, splitMinZ: 300, splitLenMin: 60, splitLenRange: 60,
   splitGapHalf: 3, splitWallSpacing: 6,
+  /** Half-pipes: heightAt curves up parabolically toward the walls (see pipeHeight), blended in
+   * and out over pipeBlend metres at each end so entry/exit isn't a hard step. */
+  pipeChance: 0.3, pipeMinZ: 200, pipeLenMin: 40, pipeLenRange: 40,
+  pipeWallHeight: 6, pipeBlend: 10,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -135,10 +139,23 @@ function rampHeight(r: Ramp, z: number, x: number): number {
   return (r.height * (z - r.z)) / r.length;
 }
 
+/** Half-pipe height contribution: a parabolic cross-section (0 at x=0, wallHeight at the rim,
+ * halfWidth = widthAt(z)/2), blended 0 -> 1 over pipeBlend metres at both ends of the span so
+ * entry/exit is a ramp, not a step. */
+function pipeHeight(p: Segment['pipes'][number], z: number, x: number, halfWidth: number): number {
+  if (z < p.z0 || z > p.z1 || halfWidth <= 0) return 0;
+  const blend = Math.min(1, (z - p.z0) / TRACK_GEN.pipeBlend, (p.z1 - z) / TRACK_GEN.pipeBlend);
+  return p.wallHeight * (x / halfWidth) ** 2 * blend;
+}
+
 function localHeight(seg: Segment, z: number, x: number): number {
   let h = 0;
   for (const b of seg.bumps) h += bumpHeight(b, z);
   for (const r of seg.ramps) h += rampHeight(r, z, x);
+  if (seg.pipes.length > 0) {
+    const halfWidth = widthAtInSegment(seg.z0, seg.z1, seg.widthStart, seg.widthEnd, z) / 2;
+    for (const p of seg.pipes) h += pipeHeight(p, z, x, halfWidth);
+  }
   return h;
 }
 
@@ -274,6 +291,32 @@ function generateSegment(seed: number, index: number): Segment {
       x: rightX, width: TRACK_GEN.rampWidth,
     });
     ice.push({ z0: split.z0, z1: split.z1 });
+  }
+
+  // Half-pipes (terrain §5). Own salted rng stream, placed after ramps/drops/split are finalised
+  // so overlap with any of them can be rejected outright (single attempt, like splits - no split
+  // exists there either).
+  const pipeRng = mulberry32(hashSeed(seed, index) ^ 0x38b34ae5);
+  const pipes: Segment['pipes'] = [];
+  if (z0 >= TRACK_GEN.pipeMinZ && pipeRng() < TRACK_GEN.pipeChance) {
+    const length = TRACK_GEN.pipeLenMin + pipeRng() * TRACK_GEN.pipeLenRange;
+    const lo = z0 + 20;
+    const hi = z1 - 20 - length;
+    if (hi > lo) {
+      const pz0 = lo + pipeRng() * (hi - lo);
+      const pz1 = pz0 + length;
+      const overlapsRamp = ramps.some(
+        (r) => pz0 < r.z + r.length + TRACK_GEN.rampExclusionAfter && pz1 > r.z - TRACK_GEN.rampExclusionBefore,
+      );
+      const overlapsDrop = drops.some(
+        (d) => pz0 < d.z + d.length + TRACK_GEN.rampExclusionAfter
+          && pz1 > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore,
+      );
+      const overlapsSplit = split !== null && pz0 < split.z1 && pz1 > split.z0;
+      if (!overlapsRamp && !overlapsDrop && !overlapsSplit) {
+        pipes.push({ z0: pz0, z1: pz1, wallHeight: TRACK_GEN.pipeWallHeight });
+      }
+    }
   }
 
   // Boost pads are drawn from their OWN rng stream (hashSeed salted, not the shared `rng`
@@ -477,7 +520,7 @@ function generateSegment(seed: number, index: number): Segment {
   }
 
   return {
-    index, z0, z1, widthStart, widthEnd, split, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
+    index, z0, z1, widthStart, widthEnd, split, pipes, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
     zone: zone.id, gate, decor,
   };
 }
@@ -545,9 +588,16 @@ export function createTrack(seed: number): Track {
     return Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, s));
   };
 
+  const pipeAt = (z: number): Segment['pipes'][number] | null => {
+    if (z < 0) return null;
+    const seg = getSegment(segmentIndexAt(z));
+    return seg.pipes.find((p) => z >= p.z0 && z <= p.z1) ?? null;
+  };
+
   const surfaceAt = (z: number): Surface => {
     if (z < 0) return 'snow';
     const seg = getSegment(segmentIndexAt(z));
+    if (seg.pipes.some((p) => z >= p.z0 && z <= p.z1)) return 'ice';
     return seg.ice.some((b) => z >= b.z0 && z < b.z1) ? 'ice' : zoneAt(z).surface;
   };
 
@@ -565,5 +615,5 @@ export function createTrack(seed: number): Track {
     return out;
   };
 
-  return { seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt };
+  return { seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt };
 }

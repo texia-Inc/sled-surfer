@@ -33,6 +33,9 @@ export interface Segment {
   /** Two-lane split section, or null when this segment has none. gapHalf is the half-width of
    * the impassable centre gap (the wall obstacles sit at x=0, spaced along z0..z1). */
   split: { z0: number; z1: number; gapHalf: number } | null;
+  /** Half-pipe spans: heightAt curves up parabolically toward the walls inside each one
+   * (terrain §5); surfaceAt reports 'ice' there. */
+  pipes: { z0: number; z1: number; wallHeight: number }[];
   corridorX: number;
   bumps: Bump[];
   ice: IceBand[];
@@ -53,6 +56,8 @@ export interface TrackQuery {
   surfaceAt(z: number): Surface;
   segmentsAround(z: number): Segment[];
   widthAt(z: number): number;
+  /** The half-pipe span containing `z`, or null when `z` isn't inside one. */
+  pipeAt(z: number): { z0: number; z1: number; wallHeight: number } | null;
 }
 
 export interface Track extends TrackQuery {

@@ -552,6 +552,64 @@ describe('createTrack', () => {
     expect(found).toBe(true);
   });
 
+  it('half-pipes only start at or after pipeMinZ and reject overlap with drops/ramps/splits', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const p of s.pipes) {
+          expect(p.z0).toBeGreaterThanOrEqual(TRACK_GEN.pipeMinZ);
+          for (const d of s.drops) {
+            expect(p.z0 < d.z + d.length + TRACK_GEN.rampExclusionAfter
+              && p.z1 > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore).toBe(false);
+          }
+          for (const r of s.ramps) {
+            expect(p.z0 < r.z + r.length + TRACK_GEN.rampExclusionAfter
+              && p.z1 > r.z - TRACK_GEN.rampExclusionBefore).toBe(false);
+          }
+          if (s.split) expect(p.z0 < s.split.z1 && p.z1 > s.split.z0).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('heightAt rises off-centre inside a half-pipe, matching wallHeight*(x/(W/2))^2', () => {
+    let found = false;
+    for (let seed = 1; seed <= 30 && !found; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20 && !found; i++) {
+        const s = t.getSegment(i);
+        for (const p of s.pipes) {
+          const mid = (p.z0 + p.z1) / 2;
+          if (mid - p.z0 < TRACK_GEN.pipeBlend || p.z1 - mid < TRACK_GEN.pipeBlend) continue;
+          const w = t.widthAt(mid);
+          const rim = 0.8 * (w / 2);
+          const center = t.heightAt(mid, 0);
+          const off = t.heightAt(mid, rim);
+          expect(off).toBeGreaterThan(center);
+          expect(off - center).toBeCloseTo(p.wallHeight * 0.64, 1);
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('surfaceAt reports ice inside a half-pipe span', () => {
+    let found = false;
+    for (let seed = 1; seed <= 30 && !found; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20 && !found; i++) {
+        const s = t.getSegment(i);
+        for (const p of s.pipes) {
+          expect(t.surfaceAt((p.z0 + p.z1) / 2)).toBe('ice');
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   it('isOnPad is true inside the pad and false just outside on each axis', () => {
     const pad = { id: 'p', x: 0, z: 10, length: 6, width: 4 };
     expect(isOnPad(0, 10, pad)).toBe(true);

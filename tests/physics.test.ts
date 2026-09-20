@@ -11,16 +11,18 @@ const DT = 1 / 120;
 function emptySegment(index: number): Segment {
   return {
     index, z0: index * 200, z1: index * 200 + 200, widthStart: DEFAULT_PHYSICS.trackWidth, widthEnd: DEFAULT_PHYSICS.trackWidth,
-    split: null, corridorX: 0, bumps: [], ice: [], ramps: [],
+    split: null, pipes: [], corridorX: 0, bumps: [], ice: [], ramps: [],
     obstacles: [], coins: [], boosts: [], drops: [], zone: 'snowfield', gate: null, decor: [],
   };
 }
 
 /** 高さ関数から TrackQuery を作る。傾きは physics と同じ後退差分。width は既定で
- * DEFAULT_PHYSICS.trackWidth を返す (既存テストの壁クランプ挙動を変えない)。 */
+ * DEFAULT_PHYSICS.trackWidth を返す (既存テストの壁クランプ挙動を変えない)。pipe は既定で
+ * null (パイプの外と同じ挙動)。 */
 function fakeTrack(
-  height: (z: number) => number, surface: Surface = 'snow', seg: Segment = emptySegment(0),
+  height: (z: number, x?: number) => number, surface: Surface = 'snow', seg: Segment = emptySegment(0),
   width: number = DEFAULT_PHYSICS.trackWidth,
+  pipe: { z0: number; z1: number; wallHeight: number } | null = null,
 ): TrackQuery {
   return {
     heightAt: height,
@@ -28,6 +30,7 @@ function fakeTrack(
     surfaceAt: () => surface,
     segmentsAround: () => [seg],
     widthAt: () => width,
+    pipeAt: () => pipe,
   };
 }
 
@@ -394,6 +397,43 @@ describe('boost pads', () => {
     const s = grounded({ vz: 45, z: 10 });
     run(s, track, 0.3);
     expect(s.vz).toBeLessThanOrEqual(45 + 1e-9);
+  });
+});
+
+describe('half-pipe lateral physics (terrain §5)', () => {
+  const W = 20;
+  const wallHeight = 6;
+  const halfW = W / 2;
+  const pipeHeightFn = (_z: number, x = 0): number => wallHeight * (x / halfW) ** 2;
+  const pipe = { z0: 0, z1: 100, wallHeight };
+
+  it('pulls a sled off-centre back toward the middle (vx becomes negative for positive x)', () => {
+    const track = fakeTrack(pipeHeightFn, 'ice', emptySegment(0), W, pipe);
+    const s = grounded({ vz: 10, vx: 0, x: 8, y: pipeHeightFn(0, 8) });
+    stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.grounded).toBe(true);
+    expect(s.vx).toBeLessThan(0);
+  });
+
+  it('takes off near the rim once vx * dh/dx exceeds pipeTakeoffVy', () => {
+    const track = fakeTrack(pipeHeightFn, 'ice', emptySegment(0), W, pipe);
+    const x0 = 0.9 * halfW;
+    const s = grounded({ vz: 10, vx: 12, x: x0, y: pipeHeightFn(0, x0) });
+    let tookOff = false;
+    for (let i = 0; i < 60 && !tookOff; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (!s.grounded) tookOff = true;
+    }
+    expect(tookOff).toBe(true);
+  });
+
+  it('outside a pipe, steering still sets vx directly (unchanged existing behaviour)', () => {
+    // Same assertion as the pre-existing "steering slows the sled and moves it sideways" test,
+    // just re-stated here to document that it's the pipe-vs-no-pipe contrast (flat has pipeAt
+    // returning null by default).
+    const s = run(grounded({ vz: 15 }), flat, 1, 1);
+    expect(s.vx).toBeGreaterThan(0);
+    expect(s.vx).toBeLessThanOrEqual(DEFAULT_PHYSICS.maxLateral);
   });
 });
 
