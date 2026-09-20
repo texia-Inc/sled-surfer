@@ -40,5 +40,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .panel .shop button b { font-size: 15px; }
 .panel .shop button small { display: block; font-weight: 400; color: #567; }
 .panel .retry { margin-top: 14px; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: #2f8f4e; color: #fff; font-size: 18px; font-weight: 700; cursor: pointer; }
+.joy { position: fixed; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.25); border: 2px solid #fff; pointer-events: none; transform: translate(-50%,-50%); }
+.joy .knob { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.7); transform: translate(-50%,-50%); }
 .hidden { display: none !important; }
 .fatal { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; background: #1b1f2a; }

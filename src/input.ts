@@ -6,10 +6,12 @@ export interface InputSnapshot {
   pull: number;
   pulling: boolean;
   released: boolean;
+  joy: { active: boolean; originX: number; originY: number; dx: number };
 }
 
 const PULL_DISTANCE_RATIO = 0.25;
 const KEY_GAUGE_PERIOD = 1.2;
+const JOY_RADIUS_PX = 60;
 
 export class InputController {
   phase: Phase = 'aim';
@@ -19,6 +21,11 @@ export class InputController {
   private rightDown = false;
   private pointerSteer = 0;
   private pointerDown = false;
+  private activePointerId: number | null = null;
+  private joyActive = false;
+  private joyOriginX = 0;
+  private joyOriginY = 0;
+  private joyDx = 0;
   private pulling = false;
   private pullStartY = 0;
   private pull = 0;
@@ -31,7 +38,7 @@ export class InputController {
   private readonly onKeyUp = (e: KeyboardEvent) => this.keyUp(e);
   private readonly onPointerDown = (e: PointerEvent) => this.pointerDownHandler(e);
   private readonly onPointerMove = (e: PointerEvent) => this.pointerMoveHandler(e);
-  private readonly onPointerUp = () => this.pointerUpHandler();
+  private readonly onPointerUp = (e: PointerEvent) => this.pointerUpHandler(e);
 
   constructor(target: HTMLElement) {
     this.target = target;
@@ -66,6 +73,12 @@ export class InputController {
       this.spaceHeld = false;
       this.pulling = false;
     }
+    if (this.phase !== 'run' && (this.joyActive || this.activePointerId !== null)) {
+      this.activePointerId = null;
+      this.joyActive = false;
+      this.joyDx = 0;
+      this.pointerSteer = 0;
+    }
   }
 
   read(): InputSnapshot {
@@ -76,6 +89,12 @@ export class InputController {
       pull: this.pull,
       pulling: this.pulling,
       released: this.releasedQueued,
+      joy: {
+        active: this.joyActive,
+        originX: this.joyOriginX,
+        originY: this.joyOriginY,
+        dx: this.joyDx,
+      },
     };
     this.rocketQueued = false;
     this.releasedQueued = false;
@@ -141,33 +160,40 @@ export class InputController {
       this.pulling = true;
       this.pullStartY = e.clientY;
       this.pull = 0;
-    } else if (this.phase === 'run') {
-      this.pointerSteer = this.steerFromX(e.clientX);
+    } else if (this.phase === 'run' && this.activePointerId === null) {
+      this.activePointerId = e.pointerId;
+      this.joyActive = true;
+      this.joyOriginX = e.clientX;
+      this.joyOriginY = e.clientY;
+      this.joyDx = 0;
+      this.pointerSteer = 0;
     }
   }
 
   private pointerMoveHandler(e: PointerEvent): void {
-    if (!this.pointerDown) return;
     if (this.phase === 'aim' && this.pulling && !this.spaceHeld) {
+      if (!this.pointerDown) return;
       const dy = e.clientY - this.pullStartY;
       this.pull = Math.max(0, Math.min(1, dy / (window.innerHeight * PULL_DISTANCE_RATIO)));
-    } else if (this.phase === 'run') {
-      this.pointerSteer = this.steerFromX(e.clientX);
+    } else if (this.phase === 'run' && this.joyActive && e.pointerId === this.activePointerId) {
+      const dx = Math.max(-JOY_RADIUS_PX, Math.min(JOY_RADIUS_PX, e.clientX - this.joyOriginX));
+      this.joyDx = dx;
+      this.pointerSteer = dx / JOY_RADIUS_PX;
     }
   }
 
-  private pointerUpHandler(): void {
+  private pointerUpHandler(e: PointerEvent): void {
+    if (this.phase === 'run' && e.pointerId === this.activePointerId) {
+      this.activePointerId = null;
+      this.joyActive = false;
+      this.joyDx = 0;
+      this.pointerSteer = 0;
+    }
     if (!this.pointerDown) return;
     this.pointerDown = false;
-    this.pointerSteer = 0;
     if (this.phase === 'aim' && this.pulling && !this.spaceHeld) {
       this.pulling = false;
       this.releasedQueued = true;
     }
-  }
-
-  private steerFromX(clientX: number): number {
-    const half = window.innerWidth / 2;
-    return Math.max(-1, Math.min(1, (clientX - half) / half));
   }
 }

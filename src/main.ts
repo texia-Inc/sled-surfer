@@ -13,6 +13,7 @@ import { Effects } from './render/effects';
 import { blendedThemeColor, themeAt } from './render/zoneTheme';
 import { Hud } from './ui/hud';
 import { AimGauge } from './ui/aim';
+import { JoystickView } from './ui/joystick';
 import { ResultsPanel } from './ui/results';
 
 const FIXED_DT = 1 / 120;
@@ -85,6 +86,7 @@ function boot(): void {
   const input = new InputController(canvas);
   const hud = new Hud(ui, () => input.pressRocket());
   const aim = new AimGauge(ui);
+  const joystick = new JoystickView(ui);
   const results = new ResultsPanel(ui, {
     onBuy: (kind) => {
       if (game.buy(kind)) results.refresh(game.profile);
@@ -127,6 +129,7 @@ function boot(): void {
     input.phase = game.phase;
     input.update(frameDt);
     const snap = input.read();
+    joystick.update(snap.joy);
 
     if (game.phase === 'aim') {
       pullShown = snap.pulling ? snap.pull : 0;
