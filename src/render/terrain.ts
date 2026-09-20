@@ -10,16 +10,15 @@ const LENGTH_SEGMENTS = 200;
 const BEHIND = 1;
 const AHEAD = 3;
 
-/** City lane-marking colour and the |x| bands they occupy (metres from centerline), scaled for
- * TRACK_WIDTH 28: two dashed lines plus a solid pair of edge lines near the track boundary. */
+/** City lane-marking colour and the |x| bands they occupy, computed per-vertex from the track's
+ * actual width at that z (`w = widthAt(gz)`) so the stripes stay proportional on x-aware/variable
+ * width track instead of using absolute offsets tuned for a single TRACK_WIDTH: two dashed lines
+ * at w/6 and w/3 from centerline, plus a solid pair of edge lines near the track boundary. */
 const STRIPE_WHITE = new THREE.Color(0.95, 0.95, 0.95);
-const DASH1_X_MIN = 4.6;
-const DASH1_X_MAX = 5.0;
-const DASH2_X_MIN = 9.6;
-const DASH2_X_MAX = 10.0;
+const STRIPE_HALF_WIDTH = 0.2;
 const DASH_PERIOD = 4;
-const EDGE_X_MIN = 13.6;
-const EDGE_X_MAX = 14.0;
+const EDGE_INSET_MIN = 0.2;
+const EDGE_INSET_MAX = 0.6;
 
 /** Distant coarse "valley" plane (terrain §3): one 1000m chunk = 5 detailed segments, low
  * resolution, flat-shaded, drawn only where the detailed TerrainManager meshes above don't
@@ -30,6 +29,9 @@ const FAR_WIDTH_SEGMENTS = 8;
 const FAR_LENGTH_SEGMENTS = 40;
 const FAR_CHUNK_COUNT = 2;
 const FAR_DARKEN = 0.85;
+/** Metres the far chunk is lowered below the detailed terrain's height, so the two slightly
+ * overlap at the boundary instead of leaving a visible seam/gap. */
+const FAR_DROP = 0.4;
 
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
@@ -105,9 +107,12 @@ export class TerrainManager {
       }
       if (onTrack && zoneAt(gz).id === 'city') {
         const ax = Math.abs(lx);
-        const inDashBand = (ax >= DASH1_X_MIN && ax <= DASH1_X_MAX) || (ax >= DASH2_X_MIN && ax <= DASH2_X_MAX);
+        const w = this.track.widthAt(gz);
+        const inDashBand =
+          (ax >= w / 6 - STRIPE_HALF_WIDTH && ax <= w / 6 + STRIPE_HALF_WIDTH) ||
+          (ax >= w / 3 - STRIPE_HALF_WIDTH && ax <= w / 3 + STRIPE_HALF_WIDTH);
         const dashed = inDashBand && Math.floor(gz / DASH_PERIOD) % 2 === 0;
-        const edge = ax >= EDGE_X_MIN && ax <= EDGE_X_MAX;
+        const edge = ax >= w / 2 - EDGE_INSET_MAX && ax <= w / 2 - EDGE_INSET_MIN;
         if (dashed || edge) c = STRIPE_WHITE;
       }
       colors[i * 3] = c.r;
@@ -153,10 +158,14 @@ export class TerrainManager {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i);
       const lz = pos.getZ(i);
       const gz = -(centerWorldZ + lz);
-      pos.setY(i, this.track.heightAt(gz, 0));
-      const c = blendedThemeColor(gz, (t) => t.ground, this.colorTmp).multiplyScalar(FAR_DARKEN);
+      pos.setY(i, this.track.heightAt(gz, 0) - FAR_DROP);
+      const onTrack = Math.abs(lx) <= this.track.widthAt(gz) / 2;
+      const c = onTrack
+        ? blendedThemeColor(gz, (t) => t.ground, this.colorTmp)
+        : blendedThemeColor(gz, (t) => t.bank, this.colorTmp).multiplyScalar(FAR_DARKEN);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;

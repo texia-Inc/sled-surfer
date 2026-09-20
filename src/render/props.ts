@@ -45,6 +45,10 @@ const SIGNPOST_EDGE_COLOR = 0x2a2a2a;
 const SIGNPOST_ARM_X = 0.42;
 /** Vertical gap between the two stacked arrow boards. */
 const SIGNPOST_ARM_GAP = 0.5;
+/** Yaw applied to each board so they read as pointing away from the pole, left/right. */
+const SIGNPOST_ARROW_ROTATION = 0.35;
+/** Extra distance each board is pushed toward its side once rotated. */
+const SIGNPOST_ARROW_OFFSET = 0.3;
 
 // --- Breakable obstacle geometry constants ---
 const HAY_RADIUS = 0.9;
@@ -596,17 +600,19 @@ export class PropManager {
       pole.position.y = SIGNPOST_POLE_HEIGHT / 2;
       holder.add(pole);
       const topY = SIGNPOST_POLE_HEIGHT - SIGNPOST_BOARD.h / 2;
-      const arms: readonly [side: number, y: number][] = [
-        [-1, topY],
-        [1, topY - SIGNPOST_ARM_GAP],
+      const arms: readonly [side: number, y: number, rotationY: number][] = [
+        [-1, topY, SIGNPOST_ARROW_ROTATION],
+        [1, topY - SIGNPOST_ARM_GAP, -SIGNPOST_ARROW_ROTATION],
       ];
-      for (const [side, y] of arms) {
-        const x = side * SIGNPOST_ARM_X;
+      for (const [side, y, rotationY] of arms) {
+        const x = side * (SIGNPOST_ARM_X + SIGNPOST_ARROW_OFFSET);
         const edge = new THREE.Mesh(this.signpostEdgeGeo, this.matSignpostEdge);
         edge.position.set(x, y, -0.01);
+        edge.rotation.y = rotationY;
         holder.add(edge);
         const board = new THREE.Mesh(this.signpostBoardGeo, this.matSignpostBoard);
         board.position.set(x, y, 0);
+        board.rotation.y = rotationY;
         holder.add(board);
       }
       group.add(holder);

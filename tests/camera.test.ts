@@ -80,4 +80,17 @@ describe('stepPose', () => {
     expect(next.px).toBeCloseTo(10, 3);
     expect(next.fov).toBeCloseTo(66, 3);
   });
+
+  it('drops py/ly faster than the upward tau (0.6) when the target is below prev (POS_TAU_FALL)', () => {
+    const fallingPrev: Pose = { px: 0, py: 20, pz: 0, lx: 0, ly: 20, lz: 0, fov: 60 };
+    const fallingTarget: Pose = { px: 0, py: 0, pz: 0, lx: 0, ly: 0, lz: 0, fov: 60 };
+    const dt = 0.1;
+    const next = stepPose(fallingPrev, fallingTarget, dt, 'full');
+    const dropWithFallTau = fallingPrev.py - next.py;
+    const kUpwardTau = 1 - Math.exp(-dt / 0.6);
+    const dropWithUpwardTau = (fallingPrev.py - fallingTarget.py) * kUpwardTau;
+    expect(dropWithFallTau).toBeGreaterThan(dropWithUpwardTau);
+    const lyDropWithFallTau = fallingPrev.ly - next.ly;
+    expect(lyDropWithFallTau).toBeGreaterThan((fallingPrev.ly - fallingTarget.ly) * kUpwardTau);
+  });
 });

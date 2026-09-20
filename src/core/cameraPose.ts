@@ -42,6 +42,10 @@ const SPEED_EXTRA_RANGE = 25;
 
 /** Time constants (seconds) for `stepPose`'s exponential approach toward the target. */
 const POS_TAU = 0.6;
+/** Faster tau used for `py`/`ly` when the target has dropped below the previous pose, so the
+ * camera keeps up with the sled during a steep descent instead of easing behind and losing it
+ * out the bottom of the frame. */
+const POS_TAU_FALL = 0.15;
 const LOOK_TAU = 1.0;
 const FOV_TAU = 0.5;
 
@@ -84,12 +88,14 @@ function approach(cur: number, target: number, dt: number, tau: number): number 
  * itself doesn't currently vary by mode - only the target the pose approaches does. */
 export function stepPose(prev: Pose, target: Pose, dt: number, mode: CameraMode): Pose {
   void mode;
+  const pyTau = target.py < prev.py ? POS_TAU_FALL : POS_TAU;
+  const lyTau = target.ly < prev.ly ? POS_TAU_FALL : LOOK_TAU;
   return {
     px: approach(prev.px, target.px, dt, POS_TAU),
-    py: approach(prev.py, target.py, dt, POS_TAU),
+    py: approach(prev.py, target.py, dt, pyTau),
     pz: target.pz,
     lx: approach(prev.lx, target.lx, dt, LOOK_TAU),
-    ly: approach(prev.ly, target.ly, dt, LOOK_TAU),
+    ly: approach(prev.ly, target.ly, dt, lyTau),
     lz: approach(prev.lz, target.lz, dt, LOOK_TAU),
     fov: approach(prev.fov, target.fov, dt, FOV_TAU),
   };
