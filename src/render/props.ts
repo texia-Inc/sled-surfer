@@ -26,8 +26,25 @@ const BEACON_OPACITY = 0.18;
 const RAMP_SLAB_THICKNESS = 0.5;
 const RAMP_RAIL_SIZE = { w: 0.3, h: 0.6 };
 const RAMP_RAIL_COLOR = 0xd97a1a;
-const RAMP_RAIL_X_INSET = 0.4;
+const RAMP_RAIL_X_INSET = 0.2;
 const RAMP_Y_OFFSET = 0.15;
+
+// --- Split-wall obstacle geometry constants ---
+const WALL_SIZE = { w: 2.4, h: 3, d: 2.4 };
+const WALL_COLOR = 0x9aa3ad;
+
+// --- Signpost decor geometry constants (pole + two arrow boards near a split) ---
+const SIGNPOST_POLE_RADIUS = 0.1;
+const SIGNPOST_POLE_HEIGHT = 3;
+const SIGNPOST_BOARD = { w: 0.9, h: 0.4, d: 0.08 };
+/** Extra size of the dark backing plate behind each white board, so it reads as a thin edge. */
+const SIGNPOST_EDGE_INSET = 0.05;
+const SIGNPOST_BOARD_COLOR = 0xffffff;
+const SIGNPOST_EDGE_COLOR = 0x2a2a2a;
+/** Distance of each board's centre from the pole (its inner edge touches the pole). */
+const SIGNPOST_ARM_X = 0.42;
+/** Vertical gap between the two stacked arrow boards. */
+const SIGNPOST_ARM_GAP = 0.5;
 
 // --- Breakable obstacle geometry constants ---
 const HAY_RADIUS = 0.9;
@@ -136,8 +153,16 @@ export class PropManager {
   private readonly rock = new THREE.DodecahedronGeometry(1.0, 0);
   private readonly ball = new THREE.SphereGeometry(0.5, 10, 8);
   private readonly coin = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 16);
-  private readonly rampSlabGeo = new THREE.BoxGeometry(TRACK_WIDTH, RAMP_SLAB_THICKNESS, 1);
+  /** Unit width (1); scaled per-ramp to `ramp.width` at build time since ramps now have their
+   * own width instead of always spanning TRACK_WIDTH. */
+  private readonly rampSlabGeo = new THREE.BoxGeometry(1, RAMP_SLAB_THICKNESS, 1);
   private readonly rampRailGeo = new THREE.BoxGeometry(RAMP_RAIL_SIZE.w, RAMP_RAIL_SIZE.h, 1);
+  private readonly wallGeo = new THREE.BoxGeometry(WALL_SIZE.w, WALL_SIZE.h, WALL_SIZE.d);
+  private readonly signpostPoleGeo = new THREE.CylinderGeometry(SIGNPOST_POLE_RADIUS, SIGNPOST_POLE_RADIUS, SIGNPOST_POLE_HEIGHT, 8);
+  private readonly signpostBoardGeo = new THREE.BoxGeometry(SIGNPOST_BOARD.w, SIGNPOST_BOARD.h, SIGNPOST_BOARD.d);
+  private readonly signpostEdgeGeo = new THREE.BoxGeometry(
+    SIGNPOST_BOARD.w + SIGNPOST_EDGE_INSET * 2, SIGNPOST_BOARD.h + SIGNPOST_EDGE_INSET * 2, SIGNPOST_BOARD.d * 0.5,
+  );
   private readonly padGeo = new THREE.PlaneGeometry(1, 1);
   /** Unit plane left standing in the XY plane (unrotated) for pad beacons. */
   private readonly beaconGeo = new THREE.PlaneGeometry(1, 1);
@@ -199,6 +224,10 @@ export class PropManager {
   private readonly matRampRail = new THREE.MeshLambertMaterial({ color: RAMP_RAIL_COLOR, flatShading: true });
   private readonly matRampSmall = new THREE.MeshLambertMaterial({ map: this.rampTextureSmall });
   private readonly matRampBig = new THREE.MeshLambertMaterial({ map: this.rampTextureBig });
+  private readonly matWall = new THREE.MeshLambertMaterial({ color: WALL_COLOR, flatShading: true });
+  private readonly matSignpostPole = new THREE.MeshLambertMaterial({ color: 0x8b8f99, flatShading: true });
+  private readonly matSignpostBoard = new THREE.MeshLambertMaterial({ color: SIGNPOST_BOARD_COLOR, flatShading: true });
+  private readonly matSignpostEdge = new THREE.MeshLambertMaterial({ color: SIGNPOST_EDGE_COLOR, flatShading: true });
 
   // --- New obstacle materials ---
   private readonly matStump = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
@@ -418,6 +447,10 @@ export class PropManager {
         const frameTop = new THREE.Mesh(this.crateFrameGeo, this.matCrateEdge);
         frameTop.position.y = CRATE_FRAME_Y_TOP;
         holder.add(crate, frameBottom, frameTop);
+      } else if (o.kind === 'wall') {
+        const wall = new THREE.Mesh(this.wallGeo, this.matWall);
+        wall.position.y = WALL_SIZE.h / 2;
+        holder.add(wall);
       } else if (o.kind === 'fence') {
         const rail = new THREE.Mesh(this.fenceRailGeo, this.matFence);
         rail.position.y = FENCE_RAIL_Y;
@@ -445,19 +478,19 @@ export class PropManager {
       const slabMat = big ? this.matRampBig : this.matRampSmall;
       const len = Math.sqrt(r.length * r.length + r.height * r.height);
       const midZ = r.z + r.length / 2;
-      const y = this.track.heightAt(midZ) + RAMP_Y_OFFSET;
+      const y = this.track.heightAt(midZ, r.x) + RAMP_Y_OFFSET;
       const tilt = Math.atan2(r.height, r.length);
 
       const slab = new THREE.Mesh(this.rampSlabGeo, slabMat);
-      slab.scale.z = len;
-      slab.position.set(0, y, -midZ);
+      slab.scale.set(r.width, 1, len);
+      slab.position.set(r.x, y, -midZ);
       slab.rotation.x = tilt;
       group.add(slab);
 
       for (const side of [1, -1]) {
         const rail = new THREE.Mesh(this.rampRailGeo, this.matRampRail);
         rail.scale.z = len;
-        rail.position.set(side * (TRACK_WIDTH / 2 - RAMP_RAIL_X_INSET), y, -midZ);
+        rail.position.set(r.x + side * (r.width / 2 - RAMP_RAIL_X_INSET), y, -midZ);
         rail.rotation.x = tilt;
         group.add(rail);
       }
@@ -556,6 +589,27 @@ export class PropManager {
       );
       cliffTop.rotation.y = rotY;
       group.add(cliffTop);
+    } else if (d.kind === 'signpost') {
+      const holder = new THREE.Group();
+      holder.position.set(d.x, ground, -d.z);
+      const pole = new THREE.Mesh(this.signpostPoleGeo, this.matSignpostPole);
+      pole.position.y = SIGNPOST_POLE_HEIGHT / 2;
+      holder.add(pole);
+      const topY = SIGNPOST_POLE_HEIGHT - SIGNPOST_BOARD.h / 2;
+      const arms: readonly [side: number, y: number][] = [
+        [-1, topY],
+        [1, topY - SIGNPOST_ARM_GAP],
+      ];
+      for (const [side, y] of arms) {
+        const x = side * SIGNPOST_ARM_X;
+        const edge = new THREE.Mesh(this.signpostEdgeGeo, this.matSignpostEdge);
+        edge.position.set(x, y, -0.01);
+        holder.add(edge);
+        const board = new THREE.Mesh(this.signpostBoardGeo, this.matSignpostBoard);
+        board.position.set(x, y, 0);
+        holder.add(board);
+      }
+      group.add(holder);
     }
   }
 

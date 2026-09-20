@@ -24,7 +24,7 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     sky: new THREE.Color(0x8ecdf5),
     fog: new THREE.Color(0x8ecdf5),
     fogNear: 60,
-    fogFar: 220,
+    fogFar: 320,
     gate: new THREE.Color(0x2bd8ff),
   },
   forest: {
@@ -34,7 +34,7 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     sky: new THREE.Color(0x9fd3e8),
     fog: new THREE.Color(0xb7dde9),
     fogNear: 50,
-    fogFar: 200,
+    fogFar: 320,
     gate: new THREE.Color(0x3fa35a),
   },
   city: {
@@ -44,7 +44,7 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     sky: new THREE.Color(0xc9d6e2),
     fog: new THREE.Color(0xd6dee6),
     fogNear: 70,
-    fogFar: 260,
+    fogFar: 320,
     gate: new THREE.Color(0xffb347),
   },
   cave: {
@@ -54,7 +54,7 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     sky: new THREE.Color(0x141a2b),
     fog: new THREE.Color(0x1c2438),
     fogNear: 25,
-    fogFar: 120,
+    fogFar: 180,
     gate: new THREE.Color(0xb388ff),
   },
 };
