@@ -23,6 +23,10 @@ export const TRACK_GEN = {
   /** Chance a freely-placed ramp (not the one anchored to a Drop) uses RAMP_BIG over RAMP_SMALL. */
   rampBigChance: 0.4,
   rampPlacementAttempts: 20,
+  /** Ramp plank width (m): normal ramps vs. the big ramp anchored before a Drop. */
+  rampWidth: 6, rampBigWidth: 12,
+  /** Guide coins placed before each ramp, at the ramp's x, to show players where to aim. */
+  rampGuideCoins: 3, rampGuideCoinLead: 20, rampGuideCoinSpacing: 3,
   /** No drops before this z (segments 0/1 stay drop-free). */
   dropMinZ: 400,
   dropChance: 0.35,
@@ -96,15 +100,18 @@ function bumpHeight(b: Bump, z: number): number {
   return b.amp * 0.5 * (1 + Math.cos((Math.PI * d) / b.width));
 }
 
-function rampHeight(r: Ramp, z: number): number {
+/** Ramp height contribution: only on the ramp's own lane (|x - r.x| <= r.width/2); off to the
+ * side it's flat ground, same as before or after the ramp's z span. */
+function rampHeight(r: Ramp, z: number, x: number): number {
   if (z < r.z || z >= r.z + r.length) return 0;
+  if (Math.abs(x - r.x) > r.width / 2) return 0;
   return (r.height * (z - r.z)) / r.length;
 }
 
-function localHeight(seg: Segment, z: number): number {
+function localHeight(seg: Segment, z: number, x: number): number {
   let h = 0;
   for (const b of seg.bumps) h += bumpHeight(b, z);
-  for (const r of seg.ramps) h += rampHeight(r, z);
+  for (const r of seg.ramps) h += rampHeight(r, z, x);
   return h;
 }
 
@@ -151,6 +158,17 @@ function generateSegment(seed: number, index: number): Segment {
   // Ramps and drops. A drop's companion big ramp (added first, if a drop is rolled) counts
   // toward the segment's 1-2 ramps; any further ramps are drawn small/big at rampBigChance and
   // kept at least rampMinGap apart from every ramp already placed (including the drop's).
+  // Ramp x/width is drawn from its own salted rng stream so the shared `rng` sequence (big/rz
+  // draws below, and everything drawn from `rng` after the ramp loop) is unaffected by adding
+  // this feature - only the accepted ramps consume a draw, keeping generation deterministic and
+  // pre-existing draws byte-for-byte unchanged.
+  const rampXRng = mulberry32(hashSeed(seed, index) ^ 0x1b873593);
+  const rampX = (width: number): number => {
+    const lo = -TRACK_WIDTH / 2 + width / 2 + 1;
+    const hi = TRACK_WIDTH / 2 - width / 2 - 1;
+    return lo + rampXRng() * (hi - lo);
+  };
+
   const ramps: Ramp[] = [];
   const drops: Drop[] = [];
   let rampCounter = 0;
@@ -159,8 +177,10 @@ function generateSegment(seed: number, index: number): Segment {
       + rng() * (SEGMENT_LENGTH - TRACK_GEN.dropStartMargin - TRACK_GEN.dropEndMargin);
     const depth = TRACK_GEN.dropDepthMin + rng() * TRACK_GEN.dropDepthRange;
     drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
+    // Big drop ramps are centred (x=0) so the drop line-up is fair regardless of who's aiming.
     ramps.push({
       id: `${index}-r${rampCounter++}`, z: dz - RAMP_BIG.length, length: RAMP_BIG.length, height: RAMP_BIG.height,
+      x: 0, width: TRACK_GEN.rampBigWidth,
     });
   }
   const rampCount = TRACK_GEN.rampMin + Math.floor(rng() * TRACK_GEN.rampRange);
@@ -171,7 +191,11 @@ function generateSegment(seed: number, index: number): Segment {
     const template = big ? RAMP_BIG : RAMP_SMALL;
     const rz = rampSpanLo + rng() * (rampSpanHi - rampSpanLo);
     if (ramps.some((r) => Math.abs(rz - r.z) < TRACK_GEN.rampMinGap)) continue;
-    ramps.push({ id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height });
+    const width = big ? TRACK_GEN.rampBigWidth : TRACK_GEN.rampWidth;
+    ramps.push({
+      id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height,
+      x: rampX(width), width,
+    });
   }
 
   // Boost pads are drawn from their OWN rng stream (hashSeed salted, not the shared `rng`
@@ -273,6 +297,19 @@ function generateSegment(seed: number, index: number): Segment {
       });
     }
   });
+  // Guide coins: a short line before each ramp, at the ramp's own x, showing players where to
+  // aim so they land on the plank instead of skidding past it.
+  let guideCount = 0;
+  for (const r of ramps) {
+    for (let k = 0; k < TRACK_GEN.rampGuideCoins; k++) {
+      coins.push({
+        id: `${index}-g${guideCount++}`,
+        x: r.x,
+        z: r.z - TRACK_GEN.rampGuideCoinLead - k * TRACK_GEN.rampGuideCoinSpacing,
+        lift: 0,
+      });
+    }
+  }
 
   const gate: Gate | null = zone.z0 === z0 && zone.z0 > 0 ? { z: z0, zone: zone.id } : null;
 
@@ -382,13 +419,13 @@ export function createTrack(seed: number): Track {
     return offset;
   };
 
-  const heightAt = (z: number): number => {
+  const heightAt = (z: number, x = 0): number => {
     if (z < 0) return baseHeight(z);
-    return baseHeight(z) - dropOffset(z) + localHeight(getSegment(segmentIndexAt(z)), z);
+    return baseHeight(z) - dropOffset(z) + localHeight(getSegment(segmentIndexAt(z)), z, x);
   };
 
-  const slopeAt = (z: number): number => {
-    const s = (heightAt(z) - heightAt(z - SLOPE_STEP)) / SLOPE_STEP;
+  const slopeAt = (z: number, x = 0): number => {
+    const s = (heightAt(z, x) - heightAt(z - SLOPE_STEP, x)) / SLOPE_STEP;
     return Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, s));
   };
 

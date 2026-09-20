@@ -89,7 +89,8 @@ describe('createTrack', () => {
       const s = t.getSegment(i);
       for (const r of s.ramps) {
         const end = r.z + r.length;
-        const drop = t.heightAt(end - 0.01) - t.heightAt(end + 0.01);
+        // Ramp height is per-lane (terrain §1): query at the ramp's own x, not the default x=0.
+        const drop = t.heightAt(end - 0.01, r.x) - t.heightAt(end + 0.01, r.x);
         expect(Math.abs(drop - r.height)).toBeLessThan(0.1);
         found = true;
       }
@@ -365,6 +366,58 @@ describe('createTrack', () => {
       }
     }
     expect(sawFullScale).toBe(true);
+  });
+
+  it('ramps have an x/width within the track and heightAt is only positive on the ramp lane', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const r of s.ramps) {
+          expect(r.x - r.width / 2).toBeGreaterThanOrEqual(-TRACK_WIDTH / 2);
+          expect(r.x + r.width / 2).toBeLessThanOrEqual(TRACK_WIDTH / 2);
+          const matchesSmall = r.width === TRACK_GEN.rampWidth;
+          const matchesBig = r.width === TRACK_GEN.rampBigWidth;
+          expect(matchesSmall || matchesBig).toBe(true);
+          const mid = r.z + r.length / 2;
+          expect(t.heightAt(mid, r.x)).toBeGreaterThan(t.heightAt(mid, r.x + r.width));
+        }
+      }
+    }
+  });
+
+  it('drop ramps are centred at x=0 with the big width', () => {
+    let found = false;
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const d of s.drops) {
+          const companion = s.ramps.find((r) => Math.abs(r.z + r.length - d.z) < 1e-9);
+          expect(companion).toBeDefined();
+          expect(companion!.x).toBe(0);
+          expect(companion!.width).toBe(TRACK_GEN.rampBigWidth);
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('places rampGuideCoins guide coins at the ramp\'s own x before each ramp', () => {
+    let found = false;
+    for (let seed = 1; seed <= 5; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 10; i++) {
+        const s = t.getSegment(i);
+        for (const r of s.ramps) {
+          const guides = s.coins.filter((c) => c.x === r.x && c.z < r.z && c.z >= r.z - TRACK_GEN.rampGuideCoinLead - TRACK_GEN.rampGuideCoins * TRACK_GEN.rampGuideCoinSpacing);
+          expect(guides.length).toBeGreaterThanOrEqual(TRACK_GEN.rampGuideCoins);
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
   });
 
   it('isOnPad is true inside the pad and false just outside on each axis', () => {

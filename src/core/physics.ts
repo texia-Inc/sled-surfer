@@ -90,7 +90,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   const drag = -p.kDrag * p.dragMul * s.vz * Math.abs(s.vz);
 
   if (s.grounded) {
-    const slope0 = track.slopeAt(s.z);
+    const slope0 = track.slopeAt(s.z, s.x);
     const surface = track.surfaceAt(s.z);
     const onIce = s.boostGrace > 0 || surface === 'ice';
     const muBase = onIce ? p.muIce : surface === 'road' ? p.muRoad : p.muSnow;
@@ -106,9 +106,9 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
 
     const vy0 = s.vz * slope0;
     s.z += s.vz * dt;
-    const slope1 = track.slopeAt(s.z);
+    const slope1 = track.slopeAt(s.z, s.x);
     const vy1 = s.vz * slope1;
-    const ground = track.heightAt(s.z);
+    const ground = track.heightAt(s.z, s.x);
     const requiredAccel = (vy1 - vy0) / dt;
     const projected = s.y + vy0 * dt - 0.5 * p.g * dt * dt;
     if (s.vz > 0 && (requiredAccel < -p.g || ground < projected)) {
@@ -178,6 +178,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     rampLoop: for (const seg of segments) {
       for (const r of seg.ramps) {
         if (s.triggeredPadIds.has(r.id) || s.z < r.z || s.z >= r.z + r.length) continue;
+        if (Math.abs(s.x - r.x) > r.width / 2) continue;
         applyBoost(s, p, r.id);
         break rampLoop;
       }

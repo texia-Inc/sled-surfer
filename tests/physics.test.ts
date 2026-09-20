@@ -393,7 +393,7 @@ describe('boost pads', () => {
 describe('ramps boost like pads (flow addendum)', () => {
   it('riding onto a ramp grounded gives boostCount 1, vz >= boostMinSpeed, and does not re-trigger', () => {
     const seg = emptySegment(0);
-    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3 });
+    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3, x: 0, width: 6 });
     const track = fakeTrack(() => 0, 'snow', seg);
     const s = grounded({ vz: 10, z: 8 });
     let count = 0;
@@ -411,8 +411,8 @@ describe('ramps boost like pads (flow addendum)', () => {
 
   it('a second ramp within the chain window raises boostChain to 2', () => {
     const seg = emptySegment(0);
-    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3 });
-    seg.ramps.push({ id: 'r2', z: 25, length: 6, height: 3 });
+    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3, x: 0, width: 6 });
+    seg.ramps.push({ id: 'r2', z: 25, length: 6, height: 3, x: 0, width: 6 });
     const track = fakeTrack(() => 0, 'snow', seg);
     const s = grounded({ vz: 10, z: 8 });
     let count = 0;
@@ -422,6 +422,24 @@ describe('ramps boost like pads (flow addendum)', () => {
     }
     expect(count).toBe(2);
     expect(s.boostChain).toBe(2);
+  });
+});
+
+describe('aimed ramps (terrain §1)', () => {
+  it('boosts when riding the ramp lane but not when riding past it off to the side', () => {
+    const onLineSeg = emptySegment(0);
+    onLineSeg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3, x: 5, width: 6 });
+    const onLineTrack = fakeTrack(() => 0, 'snow', onLineSeg);
+    const onLine = grounded({ vz: 10, z: 8, x: 5 });
+    run(onLine, onLineTrack, 0.5);
+    expect(onLine.boostCount).toBe(1);
+
+    const offLineSeg = emptySegment(0);
+    offLineSeg.ramps.push({ id: 'r2', z: 10, length: 6, height: 3, x: 5, width: 6 });
+    const offLineTrack = fakeTrack(() => 0, 'snow', offLineSeg);
+    const offLine = grounded({ vz: 10, z: 8, x: -5 });
+    run(offLine, offLineTrack, 0.5);
+    expect(offLine.boostCount).toBe(0);
   });
 });
 

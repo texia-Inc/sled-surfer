@@ -17,7 +17,7 @@ export interface Gate { z: number; zone: ZoneId; }
 export interface Obstacle { id: string; kind: ObstacleKind; x: number; z: number; r: number; }
 /** lift: 地面からの追加高さ (m)。0 なら地面のすぐ上 */
 export interface Coin { id: string; x: number; z: number; lift: number; }
-export interface Ramp { id: string; z: number; length: number; height: number; }
+export interface Ramp { id: string; z: number; length: number; height: number; x: number; width: number; }
 export interface IceBand { z0: number; z1: number; }
 export interface Bump { z: number; amp: number; width: number; }
 export interface BoostPad { id: string; x: number; z: number; length: number; width: number; }
@@ -43,8 +43,8 @@ export interface Segment {
 
 /** 物理が必要とするコースの問い合わせ。テストではこれを偽装する */
 export interface TrackQuery {
-  heightAt(z: number): number;
-  slopeAt(z: number): number;
+  heightAt(z: number, x?: number): number;
+  slopeAt(z: number, x?: number): number;
   surfaceAt(z: number): Surface;
   segmentsAround(z: number): Segment[];
 }
