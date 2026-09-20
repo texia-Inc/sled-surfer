@@ -1,5 +1,5 @@
 import type { Coin, Input, RunState, TrackQuery } from './types';
-import { isOnPad, OBSTACLE_BREAKABLE } from './track';
+import { isOnPad, OBSTACLE_BREAKABLE, SLOPE_STEP } from './track';
 import { DEFAULT_PHYSICS, LAUNCH, type PhysicsParams } from './params';
 
 export function launchSpeed(pull: number, slingshotMul: number): number {
@@ -47,7 +47,7 @@ export function boostChainMul(s: RunState, p: PhysicsParams): number {
 }
 
 export function coinWorldY(track: TrackQuery, coin: Coin, p: PhysicsParams): number {
-  return track.heightAt(coin.z) + p.coinLift + coin.lift;
+  return track.heightAt(coin.z, coin.x) + p.coinLift + coin.lift;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -105,7 +105,9 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     // - it adds a lateral accel on top of the pipe's own centring pull (-g * dh/dx, the numeric
     // cross-section slope at the sled's current x). Outside any pipe, behaviour is unchanged.
     const pipe = track.pipeAt(s.z);
-    const slopeX = pipe ? (track.heightAt(s.z, s.x + 0.1) - track.heightAt(s.z, s.x - 0.1)) / 0.2 : 0;
+    const slopeX = pipe
+      ? (track.heightAt(s.z, s.x + SLOPE_STEP) - track.heightAt(s.z, s.x - SLOPE_STEP)) / (2 * SLOPE_STEP)
+      : 0;
     if (!wasStunned) {
       if (pipe) {
         s.vx += (-p.g * slopeX + steer * p.steerAccelPipe) * dt;
@@ -176,7 +178,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     s.vx = Math.abs(s.vx) * p.wallBounceDamping;
   }
 
-  const groundHere = track.heightAt(s.z);
+  const groundHere = track.heightAt(s.z, s.x);
   const segments = track.segmentsAround(s.z);
 
   // Pads only trigger while rolling on the ground (unlike obstacles, which also catch a low

@@ -4,7 +4,7 @@ import {
 } from '../src/core/physics';
 import { DEFAULT_PHYSICS, LAUNCH } from '../src/core/params';
 import { createTrack, SLOPE_STEP, MAX_SLOPE } from '../src/core/track';
-import type { RunState, Segment, Surface, TrackQuery } from '../src/core/types';
+import type { Coin, RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 
 const DT = 1 / 120;
 
@@ -26,7 +26,7 @@ function fakeTrack(
 ): TrackQuery {
   return {
     heightAt: height,
-    slopeAt: (z) => Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, (height(z) - height(z - SLOPE_STEP)) / SLOPE_STEP)),
+    slopeAt: (z, x) => Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, (height(z, x) - height(z - SLOPE_STEP, x)) / SLOPE_STEP)),
     surfaceAt: () => surface,
     segmentsAround: () => [seg],
     widthAt: () => width,
@@ -499,6 +499,46 @@ describe('aimed ramps (terrain §1)', () => {
     const offLine = grounded({ vz: 10, z: 8, x: -5 });
     run(offLine, offLineTrack, 0.5);
     expect(offLine.boostCount).toBe(0);
+  });
+
+  it('hits an obstacle sitting on the ramp lane instead of the height gate suppressing it (x-aware groundHere)', () => {
+    // A ramp centred at x=5, height 3 over its 6 m length. An obstacle sits on that same lane
+    // near the ramp's end (~2.5 m up). groundHere must reflect the ramp height at the sled's own
+    // x, not the flat ground at x=0 - otherwise s.y - groundHere would read ~2.5 m (> the
+    // default 1.5 m obstacleClearHeight) and the collision would be wrongly skipped.
+    const ramp = { id: 'r1', z: 10, length: 6, height: 3, x: 5, width: 6 };
+    const heightFn = (z: number, x = 0): number => {
+      if (z < ramp.z || z >= ramp.z + ramp.length || Math.abs(x - ramp.x) > ramp.width / 2) return 0;
+      return (ramp.height * (z - ramp.z)) / ramp.length;
+    };
+    const seg = emptySegment(0);
+    seg.ramps.push(ramp);
+    seg.obstacles.push({ id: 'o', kind: 'rock', x: 5, z: 15, r: 1 });
+    const track = fakeTrack(heightFn, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8, x: 5, y: heightFn(8, 5) });
+    let hit = false;
+    for (let i = 0; i < 60 && !hit; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (s.stunTime > 0) hit = true;
+    }
+    expect(hit).toBe(true);
+  });
+});
+
+describe('x-aware coin height inside a half-pipe (fix round 1)', () => {
+  it('coinWorldY at x=8 is close to the pipe wall height there, greater than at x=0', () => {
+    const W = 20;
+    const wallHeight = 6;
+    const halfW = W / 2;
+    const pipeHeightFn = (_z: number, x = 0): number => wallHeight * (x / halfW) ** 2;
+    const track = fakeTrack(pipeHeightFn, 'ice', emptySegment(0), W, { z0: 0, z1: 100, wallHeight });
+    const centerCoin: Coin = { id: 'c0', x: 0, z: 50, lift: 0 };
+    const offCoin: Coin = { id: 'c8', x: 8, z: 50, lift: 0 };
+    const centerY = coinWorldY(track, centerCoin, DEFAULT_PHYSICS);
+    const offY = coinWorldY(track, offCoin, DEFAULT_PHYSICS);
+    const expectedOff = pipeHeightFn(50, 8) + DEFAULT_PHYSICS.coinLift;
+    expect(offY).toBeCloseTo(expectedOff, 5);
+    expect(offY).toBeGreaterThan(centerY);
   });
 });
 

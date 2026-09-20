@@ -55,10 +55,19 @@ export const TRACK_GEN = {
    * the track into a left lane (coins) and a right lane (a small ramp + ice). */
   splitChance: 0.3, splitMinZ: 300, splitLenMin: 60, splitLenRange: 60,
   splitGapHalf: 3, splitWallSpacing: 6,
+  /** Margin (m) kept between a split span and its segment's own z0/z1 when choosing where to
+   * place it. */
+  splitMargin: 30,
+  /** Left-lane split coin lines: how far past the span's own z0 the first line starts, and how
+   * many coins each of the two lines has. */
+  splitCoinLead: 10, splitCoinsPerLine: 8,
   /** Half-pipes: heightAt curves up parabolically toward the walls (see pipeHeight), blended in
    * and out over pipeBlend metres at each end so entry/exit isn't a hard step. */
   pipeChance: 0.3, pipeMinZ: 200, pipeLenMin: 40, pipeLenRange: 40,
   pipeWallHeight: 6, pipeBlend: 10,
+  /** Margin (m) kept between a pipe span and its segment's own z0/z1 when choosing where to
+   * place it. */
+  pipeMargin: 20,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -259,8 +268,8 @@ function generateSegment(seed: number, index: number): Segment {
   let split: Segment['split'] = null;
   if (z0 >= TRACK_GEN.splitMinZ && splitRng() < TRACK_GEN.splitChance) {
     const length = TRACK_GEN.splitLenMin + splitRng() * TRACK_GEN.splitLenRange;
-    const lo = z0 + 30;
-    const hi = z1 - 30 - length;
+    const lo = z0 + TRACK_GEN.splitMargin;
+    const hi = z1 - TRACK_GEN.splitMargin - length;
     if (hi > lo) {
       const sz0 = lo + splitRng() * (hi - lo);
       const sz1 = sz0 + length;
@@ -300,8 +309,8 @@ function generateSegment(seed: number, index: number): Segment {
   const pipes: Segment['pipes'] = [];
   if (z0 >= TRACK_GEN.pipeMinZ && pipeRng() < TRACK_GEN.pipeChance) {
     const length = TRACK_GEN.pipeLenMin + pipeRng() * TRACK_GEN.pipeLenRange;
-    const lo = z0 + 20;
-    const hi = z1 - 20 - length;
+    const lo = z0 + TRACK_GEN.pipeMargin;
+    const hi = z1 - TRACK_GEN.pipeMargin - length;
     if (hi > lo) {
       const pz0 = lo + pipeRng() * (hi - lo);
       const pz1 = pz0 + length;
@@ -369,11 +378,13 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  // Uniform across the full width (not a narrow band): (rng()-0.5) in [-0.5,0.5] * TRACK_WIDTH.
+  // Uniform across the full width at the segment's midpoint (not a narrow band): (rng()-0.5) in
+  // [-0.5,0.5] * widthAt(mid). Still exactly one rng() call, same position in the draw order as
+  // before width existed - only the multiplier changed (was the nominal TRACK_WIDTH).
   // When this segment has a split, the drawn value is remapped (not redrawn - the shared rng
   // draw itself is unchanged) into whichever lane its sign already pointed at, so the corridor
   // rule still guarantees one clear lane through the split instead of straddling the centre wall.
-  const rawCorridorX = (rng() - 0.5) * TRACK_WIDTH;
+  const rawCorridorX = (rng() - 0.5) * widthAt(z0 + SEGMENT_LENGTH / 2);
   const corridorX = ((): number => {
     if (!split) return rawCorridorX;
     const w = widthAt(split.z0);
@@ -448,15 +459,15 @@ function generateSegment(seed: number, index: number): Segment {
       });
     }
   }
-  // Split left lane: two 8-coin lines at x=-W/4, spread across the span so the whole lane reads
-  // as the "coin" side against the ramp+ice "right" side.
+  // Split left lane: two splitCoinsPerLine-coin lines at x=-W/4, spread across the span so the
+  // whole lane reads as the "coin" side against the ramp+ice "right" side.
   if (split) {
     const leftX = -widthAt(split.z0) / 4;
     const spanLen = split.z1 - split.z0;
-    const lineStarts = [split.z0 + 10, split.z0 + spanLen / 2];
+    const lineStarts = [split.z0 + TRACK_GEN.splitCoinLead, split.z0 + spanLen / 2];
     let splitCoinCount = 0;
     for (const lineStart of lineStarts) {
-      for (let k = 0; k < 8; k++) {
+      for (let k = 0; k < TRACK_GEN.splitCoinsPerLine; k++) {
         coins.push({ id: `${index}-sc${splitCoinCount++}`, x: leftX, z: lineStart + k * TRACK_GEN.coinSpacing, lift: 0 });
       }
     }

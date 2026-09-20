@@ -300,16 +300,19 @@ describe('createTrack', () => {
     }
   });
 
-  it('draws corridorX uniformly across the full track width (not a narrow band)', () => {
+  it('draws corridorX uniformly across the segment\'s own width (widthAt at its midpoint, not the nominal TRACK_WIDTH)', () => {
     let sawNearLeftEdge = false;
     let sawNearRightEdge = false;
     for (let seed = 1; seed <= 20; seed++) {
       const t = createTrack(seed);
       for (let i = 0; i < 5; i++) {
-        const cx = t.getSegment(i).corridorX;
-        expect(Math.abs(cx)).toBeLessThanOrEqual(TRACK_WIDTH / 2 + 1e-9);
-        if (cx < -TRACK_WIDTH / 2 + 3) sawNearLeftEdge = true;
-        if (cx > TRACK_WIDTH / 2 - 3) sawNearRightEdge = true;
+        const seg = t.getSegment(i);
+        const mid = seg.z0 + SEGMENT_LENGTH / 2;
+        const halfW = t.widthAt(mid) / 2;
+        const cx = seg.corridorX;
+        expect(Math.abs(cx)).toBeLessThanOrEqual(halfW + 1e-9);
+        if (cx < -halfW + 3) sawNearLeftEdge = true;
+        if (cx > halfW - 3) sawNearRightEdge = true;
       }
     }
     expect(sawNearLeftEdge).toBe(true);
