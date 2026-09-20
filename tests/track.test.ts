@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
-  SEGMENT_LENGTH, TRACK_WIDTH, RAMP_HEIGHT, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
+  SEGMENT_LENGTH, TRACK_WIDTH, RAMP_SMALL, RAMP_BIG, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
 } from '../src/core/track';
 import { zoneAt, ZONES } from '../src/core/zones';
 
@@ -82,19 +82,147 @@ describe('createTrack', () => {
     }
   });
 
-  it('ramp ends with a cliff of RAMP_HEIGHT', () => {
+  it('every ramp ends with a cliff matching its own height (small or big)', () => {
     const t = createTrack(11);
     let found = false;
-    for (let i = 0; i < 40 && !found; i++) {
+    for (let i = 0; i < 40; i++) {
       const s = t.getSegment(i);
       for (const r of s.ramps) {
         const end = r.z + r.length;
         const drop = t.heightAt(end - 0.01) - t.heightAt(end + 0.01);
-        expect(Math.abs(drop - RAMP_HEIGHT)).toBeLessThan(0.1);
+        expect(Math.abs(drop - r.height)).toBeLessThan(0.1);
         found = true;
       }
     }
     expect(found).toBe(true);
+  });
+
+  it('every segment 0..20 has 1-2 ramps, each a small or big template, ids unique per segment', () => {
+    const t = createTrack(11);
+    for (let i = 0; i <= 20; i++) {
+      const s = t.getSegment(i);
+      expect(s.ramps.length).toBeGreaterThanOrEqual(1);
+      expect(s.ramps.length).toBeLessThanOrEqual(2);
+      const ids = new Set(s.ramps.map((r) => r.id));
+      expect(ids.size).toBe(s.ramps.length);
+      for (const r of s.ramps) {
+        const matchesSmall = r.length === RAMP_SMALL.length && r.height === RAMP_SMALL.height;
+        const matchesBig = r.length === RAMP_BIG.length && r.height === RAMP_BIG.height;
+        expect(matchesSmall || matchesBig).toBe(true);
+      }
+    }
+  });
+
+  it('ramps within a segment are kept at least rampMinGap metres apart', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (s.ramps.length < 2) continue;
+        const zs = s.ramps.map((r) => r.z).sort((a, b) => a - b);
+        for (let k = 1; k < zs.length; k++) {
+          expect(zs[k] - zs[k - 1]).toBeGreaterThanOrEqual(TRACK_GEN.rampMinGap);
+        }
+      }
+    }
+  });
+
+  it('drops only occur in segments starting at or after dropMinZ', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (s.drops.length > 0) {
+          expect(s.z0).toBeGreaterThanOrEqual(TRACK_GEN.dropMinZ);
+        }
+      }
+    }
+  });
+
+  it('each drop has a big ramp whose end coincides with the drop start, and is placed inside the segment', () => {
+    let found = false;
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const d of s.drops) {
+          expect(d.z).toBeGreaterThanOrEqual(s.z0 + 40);
+          expect(d.z).toBeLessThanOrEqual(s.z1 - 60);
+          const companion = s.ramps.find((r) => Math.abs(r.z + r.length - d.z) < 1e-9);
+          expect(companion).toBeDefined();
+          expect(companion!.length).toBe(RAMP_BIG.length);
+          expect(companion!.height).toBe(RAMP_BIG.height);
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('heightAt descends by the drop depth (plus the base grade) across a drop not touched by a bump', () => {
+    // Measured from the drop's own start (z=drop.z, where the preceding big ramp's local height
+    // contribution has just ended, i.e. localHeight=0 there, since ramps end exactly at drop.z)
+    // to its end (z=drop.z+length, also localHeight=0 there absent a bump), so only baseHeight
+    // and dropOffset are in play. Drops whose start/end happen to fall under an (independently
+    // placed) bump are skipped - see report-core.md for why the brief's literal
+    // heightAt(drop.z-1)-based formula doesn't hold in general (that point sits on the ramp's
+    // own rising slope, which this test deliberately avoids by measuring from drop.z itself).
+    const bumpFree = (seg: ReturnType<ReturnType<typeof createTrack>['getSegment']>, z: number): boolean => (
+      seg.bumps.every((b) => Math.abs(z - b.z) >= b.width)
+    );
+    let found = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const d of s.drops) {
+          if (!bumpFree(s, d.z) || !bumpFree(s, d.z + d.length)) continue;
+          const before = t.heightAt(d.z);
+          const after = t.heightAt(d.z + d.length);
+          const expected = before + baseSlope(d.z) * d.length - d.depth;
+          expect(Math.abs(after - expected)).toBeLessThan(0.3);
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('dropOffset at each segment boundary equals the exact sum of every earlier drop\'s depth', () => {
+    // Segment boundaries have zero local height (bumps/ramps/drops all keep a margin from z0),
+    // so heightAt(i*SEGMENT_LENGTH) isolates baseHeight - dropOffset exactly (no approximation),
+    // directly exercising the cumulative cache described in brief-core.md §3/spec §2: generating
+    // segment i must only need segments 0..i-1's drop totals.
+    let sawADrop = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      let cumDepth = 0;
+      for (let i = 0; i <= 15; i++) {
+        const boundary = i * SEGMENT_LENGTH;
+        expect(t.heightAt(boundary)).toBeCloseTo(baseHeight(boundary) - cumDepth, 6);
+        const seg = t.getSegment(i);
+        if (seg.drops.length > 0) sawADrop = true;
+        for (const d of seg.drops) cumDepth += d.depth;
+      }
+    }
+    expect(sawADrop).toBe(true);
+  });
+
+  it('obstacles avoid drop spans (like ramps)', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        for (const d of s.drops) {
+          const lo = d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore;
+          const hi = d.z + d.length + TRACK_GEN.rampExclusionAfter;
+          for (const o of s.obstacles) {
+            const inSpan = o.z >= lo && o.z <= hi;
+            expect(inSpan).toBe(false);
+          }
+        }
+      }
+    }
   });
 
   it('reports ice inside ice bands and snow elsewhere', () => {

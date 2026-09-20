@@ -53,6 +53,20 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/** Shared boost-hit logic (chain, thrust duration, steering grace, min-speed kick, hit count)
+ * and bookkeeping (triggeredPadIds so a given id never re-fires). Factored out so a second
+ * trigger source (e.g. ramps, per a pending addendum - see report-core.md "concerns") can reuse
+ * it without duplicating the five field updates. */
+function applyBoost(s: RunState, p: PhysicsParams, id: string): void {
+  s.triggeredPadIds.add(id);
+  s.boostChain = Math.min(p.boostChainMax, s.boostChain + 1);
+  s.boostChainTime = p.boostChainWindow;
+  s.boostTime = p.boostDuration;
+  s.boostGrace = p.boostGraceDuration;
+  s.vz = Math.max(s.vz, p.boostMinSpeed * boostChainMul(s, p));
+  s.boostCount += 1;
+}
+
 export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery, p: PhysicsParams): RunState {
   if (s.ended) return s;
 
@@ -147,21 +161,12 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   // Pads only trigger while rolling on the ground (unlike obstacles, which also catch a low
   // hop); a run can be on at most one pad per step, so stop at the first fresh hit.
   if (s.grounded && s.y - groundHere < p.obstacleClearHeight) {
-    let padHit = false;
-    for (const seg of segments) {
+    padLoop: for (const seg of segments) {
       for (const pad of seg.boosts) {
         if (s.triggeredPadIds.has(pad.id) || !isOnPad(s.x, s.z, pad)) continue;
-        s.triggeredPadIds.add(pad.id);
-        s.boostChain = Math.min(p.boostChainMax, s.boostChain + 1);
-        s.boostChainTime = p.boostChainWindow;
-        s.boostTime = p.boostDuration;
-        s.boostGrace = p.boostGraceDuration;
-        s.vz = Math.max(s.vz, p.boostMinSpeed * boostChainMul(s, p));
-        s.boostCount += 1;
-        padHit = true;
-        break;
+        applyBoost(s, p, pad.id);
+        break padLoop;
       }
-      if (padHit) break;
     }
   }
 

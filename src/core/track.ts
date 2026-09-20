@@ -6,14 +6,28 @@ import { zoneAt } from './zones';
 
 export const SEGMENT_LENGTH = 200;
 export const TRACK_WIDTH = DEFAULT_PHYSICS.trackWidth;
-export const RAMP_LENGTH = 12;
-export const RAMP_HEIGHT = 3;
+/** Small ramp template: gentle jump, used more often than RAMP_BIG. */
+export const RAMP_SMALL = { length: 12, height: 3 } as const;
+/** Big ramp template: also placed immediately before every Drop (its end coincides with the
+ * drop's start), used less often than RAMP_SMALL otherwise. */
+export const RAMP_BIG = { length: 18, height: 6 } as const;
 
 export const TRACK_GEN = {
   bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.5, bumpAmpRange: 2.5,
   bumpAmpStartScale: 0.35, bumpAmpFullDistance: 1200,
   iceChance: 0.5, iceLengthMin: 40, iceLengthRange: 60,
-  rampChance: 0.5, rampStartMargin: 30, rampEndMargin: 40,
+  /** 1-2 ramps guaranteed per segment: rampMin + floor(rng()*rampRange). */
+  rampMin: 1, rampRange: 2, rampStartMargin: 30, rampEndMargin: 40,
+  /** Minimum z-distance kept between any two ramps in the same segment. */
+  rampMinGap: 40,
+  /** Chance a freely-placed ramp (not the one anchored to a Drop) uses RAMP_BIG over RAMP_SMALL. */
+  rampBigChance: 0.4,
+  rampPlacementAttempts: 20,
+  /** No drops before this z (segments 0/1 stay drop-free). */
+  dropMinZ: 400,
+  dropChance: 0.35,
+  dropDepthMin: 10, dropDepthRange: 5, dropLength: 20,
+  dropStartMargin: 40, dropEndMargin: 60,
   corridorRange: 8,
   coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXRange: 6, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
   archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
@@ -129,10 +143,30 @@ function generateSegment(seed: number, index: number): Segment {
     ice.push({ z0: start, z1: start + len });
   }
 
+  // Ramps and drops. A drop's companion big ramp (added first, if a drop is rolled) counts
+  // toward the segment's 1-2 ramps; any further ramps are drawn small/big at rampBigChance and
+  // kept at least rampMinGap apart from every ramp already placed (including the drop's).
   const ramps: Ramp[] = [];
-  if (rng() < TRACK_GEN.rampChance) {
-    const rz = z0 + TRACK_GEN.rampStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.rampStartMargin - TRACK_GEN.rampEndMargin);
-    ramps.push({ id: `${index}-r0`, z: rz, length: RAMP_LENGTH, height: RAMP_HEIGHT });
+  const drops: Drop[] = [];
+  let rampCounter = 0;
+  if (z0 >= TRACK_GEN.dropMinZ && rng() < TRACK_GEN.dropChance) {
+    const dz = z0 + TRACK_GEN.dropStartMargin
+      + rng() * (SEGMENT_LENGTH - TRACK_GEN.dropStartMargin - TRACK_GEN.dropEndMargin);
+    const depth = TRACK_GEN.dropDepthMin + rng() * TRACK_GEN.dropDepthRange;
+    drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
+    ramps.push({
+      id: `${index}-r${rampCounter++}`, z: dz - RAMP_BIG.length, length: RAMP_BIG.length, height: RAMP_BIG.height,
+    });
+  }
+  const rampCount = TRACK_GEN.rampMin + Math.floor(rng() * TRACK_GEN.rampRange);
+  const rampSpanLo = z0 + TRACK_GEN.rampStartMargin;
+  const rampSpanHi = z1 - TRACK_GEN.rampEndMargin;
+  for (let attempt = 0; ramps.length < rampCount && attempt < TRACK_GEN.rampPlacementAttempts; attempt++) {
+    const big = rng() < TRACK_GEN.rampBigChance;
+    const template = big ? RAMP_BIG : RAMP_SMALL;
+    const rz = rampSpanLo + rng() * (rampSpanHi - rampSpanLo);
+    if (ramps.some((r) => Math.abs(rz - r.z) < TRACK_GEN.rampMinGap)) continue;
+    ramps.push({ id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height });
   }
 
   // Boost pads are drawn from their OWN rng stream (hashSeed salted, not the shared `rng`
@@ -153,9 +187,14 @@ function generateSegment(seed: number, index: number): Segment {
   const overlapsRamp = (z: number): boolean => ramps.some(
     (r) => z < r.z + r.length + TRACK_GEN.boostMinGapFromRamp && z + boostLength > r.z - TRACK_GEN.boostMinGapFromRamp,
   );
+  const overlapsDrop = (z: number): boolean => drops.some(
+    (d) => z < d.z + d.length + TRACK_GEN.rampExclusionAfter
+      && z + boostLength > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore,
+  );
   const tryAddPad = (z: number, k: number): void => {
     if (z < TRACK_GEN.boostFirstZ) return;
     if (overlapsRamp(z)) return;
+    if (overlapsDrop(z)) return;
     if (boosts.some((b) => z < b.z + b.length && z + boostLength > b.z)) return;
     const x = padXMin + padRng() * (padXMax - padXMin);
     boosts.push({ id: `${index}-b${k}`, x, z, length: boostLength, width: boostWidth });
@@ -195,30 +234,39 @@ function generateSegment(seed: number, index: number): Segment {
     const kind = zone.obstacleKinds[Math.floor(rng() * zone.obstacleKinds.length)];
     if (Math.abs(x - corridorX) < CORRIDOR_HALF) continue;
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
+    if (drops.some((d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter)) continue;
     const r = OBSTACLE_RADIUS[kind];
     if (boosts.some((b) => Math.abs(x - b.x) < b.width / 2 + r && z >= b.z - r && z <= b.z + b.length + r)) continue;
     obstacles.push({ id: `${index}-o${obstacles.length}`, kind, x, z, r });
   }
 
+  // Ground coin lines skip any coin that would land inside a drop's span (it would float over
+  // the void instead of sitting on the ground); the drop's own arch coins (below) cover that
+  // stretch instead, lifted for a mid-air jump collect.
+  const inDropSpan = (z: number): boolean => drops.some(
+    (d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter,
+  );
   const coins: Coin[] = [];
   for (let line = 0; line < TRACK_GEN.coinLines; line++) {
     const n = TRACK_GEN.coinsPerLineMin + Math.floor(rng() * TRACK_GEN.coinsPerLineRange);
     const x = (rng() * 2 - 1) * TRACK_GEN.coinXRange;
     const startZ = z0 + TRACK_GEN.coinLineStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.coinLineStartMargin - TRACK_GEN.coinLineEndMargin);
     for (let k = 0; k < n; k++) {
-      coins.push({ id: `${index}-l${line}-${k}`, x, z: startZ + k * TRACK_GEN.coinSpacing, lift: 0 });
+      const z = startZ + k * TRACK_GEN.coinSpacing;
+      if (inDropSpan(z)) continue;
+      coins.push({ id: `${index}-l${line}-${k}`, x, z, lift: 0 });
     }
   }
-  for (const r of ramps) {
+  ramps.forEach((r, rampIdx) => {
     for (let k = 0; k < TRACK_GEN.archCoins; k++) {
       coins.push({
-        id: `${index}-a${k}`,
+        id: `${index}-a${rampIdx}-${k}`,
         x: 0,
         z: r.z + r.length + TRACK_GEN.archStartOffset + k * TRACK_GEN.archSpacing,
         lift: TRACK_GEN.archLiftBase + TRACK_GEN.archLiftAmp * Math.sin((Math.PI * k) / 6),
       });
     }
-  }
+  });
 
   const gate: Gate | null = zone.z0 === z0 && zone.z0 > 0 ? { z: z0, zone: zone.id } : null;
 
@@ -258,8 +306,6 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  const drops: Drop[] = [];
-
   return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops, zone: zone.id, gate, decor };
 }
 
@@ -267,8 +313,29 @@ export function isOnPad(x: number, z: number, pad: BoostPad): boolean {
   return Math.abs(x - pad.x) < pad.width / 2 && z >= pad.z && z < pad.z + pad.length;
 }
 
+function dropOffsetAt(d: Drop, z: number): number {
+  const t = Math.max(0, Math.min(1, (z - d.z) / d.length));
+  return d.depth * 0.5 * (1 - Math.cos(Math.PI * t));
+}
+
 export function createTrack(seed: number): Track {
   const cache = new Map<number, Segment>();
+  // Cumulative drop depth at each segment's z0, i.e. the sum of every earlier segment's drop
+  // depths (all already fully descended by the time a later segment starts - see dropOffset
+  // below). Computed and cached lazily, strictly forward from segment 0, so generating/measuring
+  // segment i only ever depends on segments 0..i-1 (never a later one).
+  const cumDropBeforeCache = new Map<number, number>();
+  const cumDropBefore = (index: number): number => {
+    if (index <= 0) return 0;
+    const cached = cumDropBeforeCache.get(index);
+    if (cached !== undefined) return cached;
+    const prevTotal = cumDropBefore(index - 1);
+    const prevSeg = getSegment(index - 1);
+    let total = prevTotal;
+    for (const d of prevSeg.drops) total += d.depth;
+    cumDropBeforeCache.set(index, total);
+    return total;
+  };
 
   const getSegment = (index: number): Segment => {
     let s = cache.get(index);
@@ -281,9 +348,23 @@ export function createTrack(seed: number): Track {
 
   const segmentIndexAt = (z: number): number => Math.max(0, Math.floor(z / SEGMENT_LENGTH));
 
+  /** Cumulative depth of every drop with d.z < z, from segments 0..segmentIndexAt(z): earlier
+   * segments' drops (always fully resolved by the time z reaches a later segment, since a
+   * drop's span never crosses its own segment's end) contribute their full depth via
+   * cumDropBefore; the current segment's own drops are cos-interpolated. */
+  const dropOffset = (z: number): number => {
+    if (z < 0) return 0;
+    const idx = segmentIndexAt(z);
+    let offset = cumDropBefore(idx);
+    for (const d of getSegment(idx).drops) {
+      if (d.z < z) offset += dropOffsetAt(d, z);
+    }
+    return offset;
+  };
+
   const heightAt = (z: number): number => {
     if (z < 0) return baseHeight(z);
-    return baseHeight(z) + localHeight(getSegment(segmentIndexAt(z)), z);
+    return baseHeight(z) - dropOffset(z) + localHeight(getSegment(segmentIndexAt(z)), z);
   };
 
   const slopeAt = (z: number): number => {
