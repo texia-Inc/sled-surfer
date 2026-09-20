@@ -1,4 +1,5 @@
 import type { Phase, Profile, RunState, ZoneId } from '../core/types';
+import type { CameraMode } from '../core/cameraPose';
 import { ZONE_THEMES } from '../render/zoneTheme';
 import { zoneAt } from '../core/zones';
 
@@ -18,6 +19,7 @@ export class Hud {
   private readonly fill: HTMLElement;
   private readonly pct: HTMLElement;
   private readonly rocket: HTMLButtonElement;
+  private readonly camToggle: HTMLButtonElement;
   private readonly toast: HTMLElement;
   private readonly chain: HTMLElement;
   private readonly zone: HTMLElement;
@@ -31,11 +33,11 @@ export class Hud {
   private lastBreakCount = 0;
   private coinToastUntil = 0;
 
-  constructor(parent: HTMLElement, onRocket: () => void) {
+  constructor(parent: HTMLElement, onRocket: () => void, onCameraToggle: () => void) {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML = `
-      <div class="stat left"><span class="dist">0 m</span><small class="speed">0 km/h</small></div>
+      <div class="stat left"><span class="dist">0 m</span><small class="speed">0 km/h</small><button class="cam-toggle" type="button"></button></div>
       <div class="stat right"><span class="coins">0</span><small>COINS</small><div class="coin-toast"></div></div>
       <div class="progress"><div class="fill"></div><div class="flag">🏁</div><div class="pct">0%</div></div>
       <button class="rocket" type="button">🚀</button>
@@ -54,10 +56,20 @@ export class Hud {
     this.chain = this.root.querySelector<HTMLElement>('.chain')!;
     this.zone = this.root.querySelector<HTMLElement>('.zone')!;
     this.coinToast = this.root.querySelector<HTMLElement>('.coin-toast')!;
+    this.camToggle = this.root.querySelector<HTMLButtonElement>('.cam-toggle')!;
     this.rocket.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       onRocket();
     });
+    this.camToggle.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      onCameraToggle();
+    });
+  }
+
+  /** Sets the camera-comfort toggle's label; called at boot and whenever main.ts flips the mode. */
+  setCameraMode(mode: CameraMode): void {
+    this.camToggle.textContent = mode === 'full' ? 'カメラ: 強' : 'カメラ: 弱';
   }
 
   update(run: RunState | null, profile: Profile, phase: Phase): void {

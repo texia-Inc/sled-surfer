@@ -10,6 +10,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .stat.right .coin-toast.on { opacity: 1; }
 .hud .stat small { display: block; font-size: 12px; opacity: .85; font-weight: 500; }
 .hud .stat.left .speed { font-size: 18px; font-weight: 700; }
+.hud .stat.left .cam-toggle { display: block; margin-top: 6px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.6); border-radius: 8px; background: rgba(0,0,0,.25); color: #fff; font-size: 11px; font-weight: 700; pointer-events: auto; cursor: pointer; }
 .hud .progress { position: absolute; right: 12px; top: 90px; bottom: 120px; width: 14px; background: rgba(255,255,255,.35); border-radius: 7px; }
 .hud .progress .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ffd23f; border-radius: 7px; }
 .hud .progress .flag { position: absolute; top: -26px; left: -6px; font-size: 20px; }

@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { targetPose, stepPose, type CameraMode, type Pose, type PoseInput } from '../core/cameraPose';
+
+export type { CameraMode };
 
 export interface CameraTarget {
   x: number;
@@ -6,7 +9,7 @@ export interface CameraTarget {
   z: number;
   rocketing: boolean;
   boosting: boolean;
-  /** 0..1 shake intensity requested this frame */
+  /** 0..1 shake intensity requested this frame; only ever raised for collisions (stun). */
   shake: number;
   /** Sled speed (m/s); drives the dynamic pull-back/pitch below. */
   speed: number;
@@ -14,81 +17,50 @@ export interface CameraTarget {
   slopeAhead: number;
   /** True while the sled is inside/approaching a drop span. */
   inDrop: boolean;
+  /** "full" (default) camera comfort behaviour vs. "mild" (no dynamic extras/pitch, fixed fov). */
+  mode: CameraMode;
 }
 
-const BACK = 7;
-const BACK_EXTRA = 7;
-const UP = 3.5;
-const UP_EXTRA = 5.5;
-const UP_BOOST = 2.6;
-const DROP_EXTRA = 3;
-/** Speed (m/s) at which the dynamic pull-back starts (k=0) and finishes (k=1). */
-const SPEED_PULLBACK_MIN = 15;
-const SPEED_PULLBACK_RANGE = 25;
-/** Below this k, a boosting sled keeps the old, lower UP_BOOST framing instead of the
- * speed-based pull-back (a slow-speed boost - e.g. just off a pad - still reads as "low and fast"). */
-const BOOST_LOW_K = 0.3;
-/** How far ahead (metres, world z) the look target leads the sled. */
-const LOOK_AHEAD_Z = 6;
-/** Multiplies `slopeAhead` when tilting the look target's y to pitch the camera toward the slope. */
-const LOOK_PITCH_SCALE = 8;
-const X_FOLLOW = 0.4;
-const FOV_NORMAL = 60;
-const FOV_ROCKET = 70;
-const FOV_BOOST = 74;
 const SHAKE_DURATION = 0.18;
 const SHAKE_AMPLITUDE = 0.35;
 
-const desired = new THREE.Vector3();
-const look = new THREE.Vector3();
+/** The eased pose from the previous frame (null until the first snap/update). Module-level like
+ * the shake energy below, mirroring this file's pre-existing style (a single active camera). */
+let pose: Pose | null = null;
 let shakeEnergy = 0;
 
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
+function toPoseInput(t: CameraTarget): PoseInput {
+  return {
+    x: t.x, y: t.y, z: t.z, speed: t.speed, slopeAhead: t.slopeAhead, inDrop: t.inDrop,
+    boosting: t.boosting, rocketing: t.rocketing,
+  };
 }
 
-/** 0..1: how far into the dynamic pull-back range `speed` sits. */
-function pullBackK(speed: number): number {
-  return clamp01((speed - SPEED_PULLBACK_MIN) / SPEED_PULLBACK_RANGE);
+function applyPose(camera: THREE.PerspectiveCamera, x: number, y: number, p: Pose): void {
+  camera.position.set(x, y, p.pz);
+  camera.lookAt(p.lx, p.ly, p.lz);
+  camera.fov = p.fov;
+  camera.updateProjectionMatrix();
 }
 
-function cameraUp(t: CameraTarget, k: number): number {
-  if (t.boosting && k < BOOST_LOW_K) return UP_BOOST;
-  return UP + UP_EXTRA * k + (t.inDrop ? DROP_EXTRA : 0);
-}
-
-function lookTargetY(t: CameraTarget): number {
-  return t.y + 1 + t.slopeAhead * LOOK_PITCH_SCALE;
-}
-
+/** Immediately places the camera at its target pose (no easing), e.g. on restart. */
 export function snapCamera(camera: THREE.PerspectiveCamera, t: CameraTarget): void {
   shakeEnergy = 0;
-  const k = 0;
-  camera.position.set(t.x * X_FOLLOW, t.y + cameraUp(t, k), -t.z + BACK + BACK_EXTRA * k);
-  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD_Z);
-  camera.lookAt(look);
+  pose = targetPose(toPoseInput(t), t.mode);
+  applyPose(camera, pose.px, pose.py, pose);
 }
 
 export function updateCamera(camera: THREE.PerspectiveCamera, t: CameraTarget, dt: number): void {
-  const k = pullBackK(t.speed);
-  const up = cameraUp(t, k);
-  const back = BACK + BACK_EXTRA * k;
-  desired.set(t.x * X_FOLLOW, t.y + up, -t.z + back);
-  const kSmooth = 1 - Math.pow(0.002, dt);
-  camera.position.x += (desired.x - camera.position.x) * kSmooth;
-  camera.position.y += (desired.y - camera.position.y) * kSmooth;
-  camera.position.z = desired.z;
+  const target = targetPose(toPoseInput(t), t.mode);
+  pose = pose ? stepPose(pose, target, dt, t.mode) : target;
 
   if (t.shake > 0) shakeEnergy = Math.max(shakeEnergy, t.shake);
   shakeEnergy = Math.max(0, shakeEnergy - dt / SHAKE_DURATION);
+  let x = pose.px;
+  let y = pose.py;
   if (shakeEnergy > 0) {
-    camera.position.x += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
-    camera.position.y += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
+    x += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
+    y += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
   }
-
-  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD_Z);
-  camera.lookAt(look);
-  const fov = t.boosting ? FOV_BOOST : t.rocketing ? FOV_ROCKET : FOV_NORMAL;
-  camera.fov += (fov - camera.fov) * Math.min(1, dt * 5);
-  camera.updateProjectionMatrix();
+  applyPose(camera, x, y, pose);
 }

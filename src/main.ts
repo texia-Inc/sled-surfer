@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Game } from './core/game';
 import { loadProfile, saveProfile, type StorageLike } from './core/save';
 import type { Phase } from './core/types';
+import type { CameraMode } from './core/cameraPose';
 import { InputController } from './input';
 import { createScene } from './render/scene';
 import { snapCamera, updateCamera } from './render/camera';
@@ -20,11 +21,12 @@ const FIXED_DT = 1 / 120;
 const MAX_STEPS = 4;
 const MAX_FRAME_DT = 0.1;
 const STEER_SMOOTH_RATE = 10;
-const SHAKE_BOOST = 0.6;
-const SHAKE_LANDING = 0.5;
+/** Camera shake is triggered by collisions only (terrain §2); boost/landing/break no longer
+ * shake the camera. */
 const SHAKE_STUN = 1.0;
-const SHAKE_BREAK = 0.35;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
+const CAMERA_MODE_KEY = 'sled-surfer:camera:v1';
+const DEFAULT_CAMERA_MODE: CameraMode = 'full';
 const FOG_LERP_RATE = 2;
 /** How far ahead (m) the camera looks for slope, to tilt the look target before a descent. */
 const CAMERA_SLOPE_AHEAD_DIST = 8;
@@ -37,6 +39,25 @@ function getStorage(): StorageLike | null {
     return window.localStorage;
   } catch {
     return null;
+  }
+}
+
+function loadCameraMode(storage: StorageLike | null): CameraMode {
+  if (!storage) return DEFAULT_CAMERA_MODE;
+  try {
+    const v = storage.getItem(CAMERA_MODE_KEY);
+    return v === 'mild' ? 'mild' : DEFAULT_CAMERA_MODE;
+  } catch {
+    return DEFAULT_CAMERA_MODE;
+  }
+}
+
+function saveCameraMode(storage: StorageLike | null, mode: CameraMode): void {
+  if (!storage) return;
+  try {
+    storage.setItem(CAMERA_MODE_KEY, mode);
+  } catch {
+    // ignore (private mode / quota)
   }
 }
 
@@ -65,6 +86,7 @@ function boot(): void {
   const game = new Game(loadProfile(storage), Date.now() % 100000, {
     onProfileChange: (p) => saveProfile(storage, p),
   });
+  let cameraMode: CameraMode = loadCameraMode(storage);
 
   let created: ReturnType<typeof createScene>;
   try {
@@ -84,7 +106,12 @@ function boot(): void {
   const player = new PlayerView(scene);
   const effects = new Effects(scene, camera);
   const input = new InputController(canvas);
-  const hud = new Hud(ui, () => input.pressRocket());
+  const hud = new Hud(ui, () => input.pressRocket(), () => {
+    cameraMode = cameraMode === 'full' ? 'mild' : 'full';
+    hud.setCameraMode(cameraMode);
+    saveCameraMode(storage, cameraMode);
+  });
+  hud.setCameraMode(cameraMode);
   const aim = new AimGauge(ui);
   const joystick = new JoystickView(ui);
   const results = new ResultsPanel(ui, {
@@ -99,7 +126,7 @@ function boot(): void {
       props.setGoal(game.profile.goalDistance);
       snapCamera(camera, {
         x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-        speed: 0, slopeAhead: 0, inDrop: false,
+        speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode,
       });
     },
   });
@@ -107,7 +134,7 @@ function boot(): void {
   props.setGoal(game.profile.goalDistance);
   snapCamera(camera, {
     x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-    speed: 0, slopeAhead: 0, inDrop: false,
+    speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode,
   });
 
   let last = performance.now();
@@ -116,10 +143,7 @@ function boot(): void {
   let steerShown = 0;
   let pullShown = 0;
   let pendingRocket = false;
-  let lastBoostCount = 0;
-  let lastLandingCountShake = 0;
   let lastStunTime = 0;
-  let lastBreakCountShake = 0;
 
   function frame(now: number): void {
     const frameDt = Math.min(MAX_FRAME_DT, (now - last) / 1000);
@@ -170,19 +194,10 @@ function boot(): void {
 
     let shake = 0;
     if (run) {
-      if (run.boostCount > lastBoostCount) shake = Math.max(shake, SHAKE_BOOST);
-      if (run.landingCount > lastLandingCountShake) shake = Math.max(shake, SHAKE_LANDING);
       if (run.stunTime > 0 && lastStunTime === 0) shake = Math.max(shake, SHAKE_STUN);
-      if (run.breakCount > lastBreakCountShake) shake = Math.max(shake, SHAKE_BREAK);
-      lastBoostCount = run.boostCount;
-      lastLandingCountShake = run.landingCount;
       lastStunTime = run.stunTime;
-      lastBreakCountShake = run.breakCount;
     } else {
-      lastBoostCount = 0;
-      lastLandingCountShake = 0;
       lastStunTime = 0;
-      lastBreakCountShake = 0;
     }
 
     (scene.background as THREE.Color).copy(blendedThemeColor(z, (t) => t.sky, skyTmp));
@@ -221,7 +236,7 @@ function boot(): void {
       breakCount: run ? run.breakCount : 0,
       dt: frameDt,
     });
-    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop }, frameDt);
+    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode }, frameDt);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
