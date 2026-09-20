@@ -87,6 +87,7 @@ function boot(): void {
     onProfileChange: (p) => saveProfile(storage, p),
   });
   let cameraMode: CameraMode = loadCameraMode(storage);
+  const groundAt = (gz: number, gx: number): number => game.track.heightAt(gz, gx);
 
   let created: ReturnType<typeof createScene>;
   try {
@@ -126,7 +127,7 @@ function boot(): void {
       props.setGoal(game.profile.goalDistance);
       snapCamera(camera, {
         x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-        speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode,
+        speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt,
       });
     },
   });
@@ -134,7 +135,7 @@ function boot(): void {
   props.setGoal(game.profile.goalDistance);
   snapCamera(camera, {
     x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-    speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode,
+    speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt,
   });
 
   let last = performance.now();
@@ -236,7 +237,7 @@ function boot(): void {
       breakCount: run ? run.breakCount : 0,
       dt: frameDt,
     });
-    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode }, frameDt);
+    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt }, frameDt);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);

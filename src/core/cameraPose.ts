@@ -41,13 +41,13 @@ const SPEED_EXTRA_MIN = 15;
 const SPEED_EXTRA_RANGE = 25;
 
 /** Time constants (seconds) for `stepPose`'s exponential approach toward the target. */
-const POS_TAU = 0.6;
+export const POS_TAU = 0.45;
 /** Faster tau used for `py`/`ly` when the target has dropped below the previous pose, so the
  * camera keeps up with the sled during a steep descent instead of easing behind and losing it
  * out the bottom of the frame. */
-const POS_TAU_FALL = 0.15;
-const LOOK_TAU = 1.0;
-const FOV_TAU = 0.5;
+export const POS_TAU_FALL = 0.15;
+export const LOOK_TAU = 0.3;
+export const FOV_TAU = 0.5;
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;

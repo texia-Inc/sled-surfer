@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { targetPose, stepPose, type Pose, type PoseInput } from '../src/core/cameraPose';
+import { targetPose, stepPose, POS_TAU, LOOK_TAU, FOV_TAU, type Pose, type PoseInput } from '../src/core/cameraPose';
 
 const BASE: PoseInput = {
   x: 0, y: 0, z: 0, speed: 0, slopeAhead: 0, inDrop: false, boosting: false, rocketing: false,
@@ -59,9 +59,9 @@ describe('stepPose', () => {
   it('moves a fraction 1 - e^(-dt/tau) toward the target for position/look/fov', () => {
     const dt = 0.3;
     const next = stepPose(prev, target, dt, 'full');
-    const kPos = 1 - Math.exp(-dt / 0.6);
-    const kLook = 1 - Math.exp(-dt / 1.0);
-    const kFov = 1 - Math.exp(-dt / 0.5);
+    const kPos = 1 - Math.exp(-dt / POS_TAU);
+    const kLook = 1 - Math.exp(-dt / LOOK_TAU);
+    const kFov = 1 - Math.exp(-dt / FOV_TAU);
     expect(next.px).toBeCloseTo(10 * kPos, 6);
     expect(next.py).toBeCloseTo(10 * kPos, 6);
     expect(next.lx).toBeCloseTo(10 * kLook, 6);
@@ -81,13 +81,13 @@ describe('stepPose', () => {
     expect(next.fov).toBeCloseTo(66, 3);
   });
 
-  it('drops py/ly faster than the upward tau (0.6) when the target is below prev (POS_TAU_FALL)', () => {
+  it('drops py/ly faster than the upward tau when the target is below prev (POS_TAU_FALL)', () => {
     const fallingPrev: Pose = { px: 0, py: 20, pz: 0, lx: 0, ly: 20, lz: 0, fov: 60 };
     const fallingTarget: Pose = { px: 0, py: 0, pz: 0, lx: 0, ly: 0, lz: 0, fov: 60 };
     const dt = 0.1;
     const next = stepPose(fallingPrev, fallingTarget, dt, 'full');
     const dropWithFallTau = fallingPrev.py - next.py;
-    const kUpwardTau = 1 - Math.exp(-dt / 0.6);
+    const kUpwardTau = 1 - Math.exp(-dt / POS_TAU);
     const dropWithUpwardTau = (fallingPrev.py - fallingTarget.py) * kUpwardTau;
     expect(dropWithFallTau).toBeGreaterThan(dropWithUpwardTau);
     const lyDropWithFallTau = fallingPrev.ly - next.ly;
