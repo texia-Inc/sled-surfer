@@ -15,22 +15,22 @@ export interface ZoneDef {
 export const ZONES: readonly ZoneDef[] = [
   {
     id: 'snowfield', nameJa: '雪山', z0: 0, surface: 'snow',
-    obstacleKinds: ['tree', 'rock', 'snowman'],
+    obstacleKinds: ['tree', 'rock', 'snowman', 'crate'],
     iceChance: 0.5, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0,
   },
   {
     id: 'forest', nameJa: '森', z0: 600, surface: 'snow',
-    obstacleKinds: ['tree', 'tree', 'stump', 'rock'],
+    obstacleKinds: ['tree', 'stump', 'rock', 'fence', 'hay'],
     iceChance: 0.3, boostChance: 0.7, bumpScale: 1.0, obstacleDensityMul: 1.3,
   },
   {
     id: 'city', nameJa: '市街地', z0: 1200, surface: 'road',
-    obstacleKinds: ['car', 'car', 'bus', 'sign', 'barrier'],
+    obstacleKinds: ['car', 'bus', 'sign', 'barrier', 'crate'],
     iceChance: 0, boostChance: 0.6, bumpScale: 0.5, obstacleDensityMul: 1.0,
   },
   {
     id: 'cave', nameJa: '洞窟', z0: 2000, surface: 'snow',
-    obstacleKinds: ['stalagmite', 'stalagmite', 'crystal', 'rock'],
+    obstacleKinds: ['stalagmite', 'crystal', 'rock', 'crate'],
     iceChance: 0.7, boostChance: 0.8, bumpScale: 1.2, obstacleDensityMul: 1.1,
   },
 ];

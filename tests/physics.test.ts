@@ -11,7 +11,7 @@ const DT = 1 / 120;
 function emptySegment(index: number): Segment {
   return {
     index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [],
-    obstacles: [], coins: [], boosts: [], zone: 'snowfield', gate: null, decor: [],
+    obstacles: [], coins: [], boosts: [], drops: [], zone: 'snowfield', gate: null, decor: [],
   };
 }
 
@@ -193,6 +193,60 @@ describe('air', () => {
       if (!s.grounded) leftGround = true;
     }
     expect(leftGround).toBe(true);
+  });
+});
+
+describe('speed model (flow §1: no passive deceleration on the base grade)', () => {
+  it('loses less than 5% speed over 5s on a slope matching the base grade (muSnow)', () => {
+    // The real track's initial base grade is slope -0.06 (see track.ts SLOPE_START); muSnow is
+    // tuned to match it so aSlope + aFriction ~= 0 there, leaving only the (small) drag term.
+    const gradeTrack = fakeTrack((z) => -0.06 * z);
+    const s = run(grounded({ vz: 20 }), gradeTrack, 5);
+    expect(s.vz).toBeGreaterThanOrEqual(20 * 0.95);
+  });
+});
+
+describe('breakable obstacles (flow §3)', () => {
+  it('breaking one: vz *= breakSpeedMul, marks broken, no stun, coins +2, breakCount 1', () => {
+    const seg = emptySegment(0);
+    seg.obstacles.push({ id: 'o', kind: 'snowman', x: 0, z: 10, r: 0.7 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let vzBefore = s.vz;
+    let hit: RunState | null = null;
+    for (let i = 0; i < 60 && !hit; i++) {
+      vzBefore = s.vz;
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (s.breakCount > 0) {
+        hit = {
+          ...s,
+          collectedCoinIds: new Set(s.collectedCoinIds),
+          brokenObstacleIds: new Set(s.brokenObstacleIds),
+        };
+      }
+    }
+    expect(hit).not.toBeNull();
+    expect(hit!.vz).toBeCloseTo(vzBefore * DEFAULT_PHYSICS.breakSpeedMul, 1);
+    expect(hit!.stunTime).toBe(0);
+    expect(hit!.coinsThisRun).toBe(DEFAULT_PHYSICS.breakCoinReward);
+    expect(hit!.breakCount).toBe(1);
+    expect(hit!.brokenObstacleIds.has('o')).toBe(true);
+
+    // Keep rolling through where the (now broken) obstacle was: no second break.
+    run(s, track, 1);
+    expect(s.breakCount).toBe(1);
+    expect(s.coinsThisRun).toBe(DEFAULT_PHYSICS.breakCoinReward);
+  });
+
+  it('a hard obstacle (e.g. rock) still stuns and pushes instead of breaking', () => {
+    const seg = emptySegment(0);
+    seg.obstacles.push({ id: 'o', kind: 'rock', x: 0, z: 10, r: 1 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    run(s, track, 0.5);
+    expect(s.stunTime).toBeGreaterThan(0);
+    expect(s.breakCount).toBe(0);
+    expect(s.brokenObstacleIds.size).toBe(0);
   });
 });
 

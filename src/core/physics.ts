@@ -1,5 +1,5 @@
 import type { Coin, Input, RunState, TrackQuery } from './types';
-import { isOnPad } from './track';
+import { isOnPad, OBSTACLE_BREAKABLE } from './track';
 import { DEFAULT_PHYSICS, LAUNCH, type PhysicsParams } from './params';
 
 export function launchSpeed(pull: number, slingshotMul: number): number {
@@ -35,6 +35,8 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     boostChainTime: 0,
     boostCount: 0,
     triggeredPadIds: new Set<string>(),
+    brokenObstacleIds: new Set<string>(),
+    breakCount: 0,
   };
 }
 
@@ -164,21 +166,31 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   }
 
   if (s.stunTime <= 0 && s.y - groundHere < p.obstacleClearHeight) {
-    for (const seg of segments) {
+    segLoop: for (const seg of segments) {
       for (const o of seg.obstacles) {
+        if (s.brokenObstacleIds.has(o.id)) continue;
         const dx = s.x - o.x;
         const dz = s.z - o.z;
         const minDist = o.r + p.sledRadius;
         if (dx * dx + dz * dz < minDist * minDist) {
+          if (OBSTACLE_BREAKABLE[o.kind]) {
+            // Breakable: it shatters and vanishes (brokenObstacleIds), a light speed penalty,
+            // a small coin reward, no stun and no lateral push. At most one break per step
+            // (the sled could theoretically overlap two at once); we don't guard against that.
+            s.brokenObstacleIds.add(o.id);
+            s.vz *= p.breakSpeedMul;
+            s.coinsThisRun += p.breakCoinReward;
+            s.breakCount += 1;
+            continue;
+          }
           const side = dx >= 0 ? 1 : -1;
           s.vz *= p.collisionSpeedMul;
           s.vx = side * p.collisionPushSpeed;
           s.x = o.x + side * minDist;
           s.stunTime = p.stunDuration;
-          break;
+          break segLoop;
         }
       }
-      if (s.stunTime > 0) break;
     }
   }
 

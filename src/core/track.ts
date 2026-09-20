@@ -1,5 +1,5 @@
 import type {
-  BoostPad, Bump, Coin, Decor, Gate, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
+  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
 import { zoneAt } from './zones';
@@ -92,6 +92,15 @@ function localHeight(seg: Segment, z: number): number {
 const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
   tree: 0.8, rock: 1.0, snowman: 0.7,
   stump: 0.7, car: 1.3, bus: 2.2, sign: 0.5, barrier: 1.2, stalagmite: 0.8, crystal: 0.9,
+  hay: 0.9, crate: 0.7, fence: 1.5,
+};
+
+/** Whether hitting this obstacle kind breaks it (see physics.ts collision handling) rather than
+ * causing a hard stun-and-bounce collision. */
+export const OBSTACLE_BREAKABLE: Record<ObstacleKind, boolean> = {
+  tree: false, rock: false, snowman: true,
+  stump: true, car: false, bus: false, sign: true, barrier: true, stalagmite: false, crystal: false,
+  hay: true, crate: true, fence: true,
 };
 
 function generateSegment(seed: number, index: number): Segment {
@@ -123,7 +132,7 @@ function generateSegment(seed: number, index: number): Segment {
   const ramps: Ramp[] = [];
   if (rng() < TRACK_GEN.rampChance) {
     const rz = z0 + TRACK_GEN.rampStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.rampStartMargin - TRACK_GEN.rampEndMargin);
-    ramps.push({ z: rz, length: RAMP_LENGTH, height: RAMP_HEIGHT });
+    ramps.push({ id: `${index}-r0`, z: rz, length: RAMP_LENGTH, height: RAMP_HEIGHT });
   }
 
   // Boost pads are drawn from their OWN rng stream (hashSeed salted, not the shared `rng`
@@ -249,7 +258,9 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts, zone: zone.id, gate, decor };
+  const drops: Drop[] = [];
+
+  return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops, zone: zone.id, gate, decor };
 }
 
 export function isOnPad(x: number, z: number, pad: BoostPad): boolean {

@@ -3,6 +3,9 @@ export interface PhysicsParams {
   muSnow: number;
   muIce: number;
   muRoad: number;
+  /** Grass friction coefficient. Defined for the flow model's off-piste terrain; no surface
+   * reports 'grass' yet, so this is unused by surfaceAt/friction lookup for now. */
+  muGrass: number;
   kDrag: number;
   kSteer: number;
   rocketAccel: number;
@@ -39,23 +42,29 @@ export interface PhysicsParams {
   rocketSpeedCap: number;
   boostSpeedCap: number;
   landingBonusSpeedCap: number;
+  /** vz multiplier on hitting a breakable obstacle (no stun, no lateral push). */
+  breakSpeedMul: number;
+  /** Coins awarded (added to coinsThisRun) for breaking a breakable obstacle. */
+  breakCoinReward: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
-  /** track.ts の初期基本勾配 (0.06) よりわずかに大きいだけ。新品のソリは雪上でも
-   * ゆっくりとしか失速せず、SLED 強化（-3%/段階）でレベル7頃には勾配を下回り、
-   * そこから先は雪自体が加速要因になる。氷 (0.02) とブーストパッドは常に速度を回復させる */
-  muSnow: 0.08,
+  /** Flow speed model (2026-09-20-flow-design §1): flat/gentle slopes no longer bleed speed —
+   * muSnow now matches the initial base grade (0.06) instead of exceeding it, so deceleration
+   * is concentrated in collisions rather than ambient friction. muGrass is defined for future
+   * off-piste terrain (unused by surfaceAt yet). */
+  muSnow: 0.06,
   muIce: 0.02,
   muRoad: 0.035,
-  kDrag: 0.0008,
+  muGrass: 0.065,
+  kDrag: 0.0005,
   kSteer: 0.25,
   rocketAccel: 15,
   rocketDuration: 1.0,
   maxLateral: 12,
   lateralRefSpeed: 30,
-  trackWidth: 16,
+  trackWidth: 28,
   sledRadius: 0.6,
   spawnGroundOffset: 0.05,
   wallBounceDamping: 0.5,
@@ -84,6 +93,8 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   rocketSpeedCap: 30,        // rocket thrust applies only while vz is below this
   boostSpeedCap: 40,         // boost thrust applies only while vz is below this
   landingBonusSpeedCap: 32,  // landing bonus never raises vz above this
+  breakSpeedMul: 0.85,
+  breakCoinReward: 2,
 };
 
 export const LAUNCH = {
