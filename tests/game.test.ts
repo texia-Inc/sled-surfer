@@ -87,6 +87,18 @@ describe('Game', () => {
     expect(game.track.seed).not.toBe(seed);
   });
 
+  it('finishes (does not stop) when the run crosses a tiny goal distance, and advances the goal', () => {
+    const game = new Game({ ...defaultProfile(), goalDistance: 30 }, 1, { endedDelay: 0 });
+    game.launch(1);
+    runUntil(game, () => game.phase === 'results');
+    expect(game.phase).toBe('results');
+    expect(game.run!.finished).toBe(true);
+    expect(game.lastResult!.finished).toBe(true);
+    expect(game.lastResult!.goalReached).toBe(true);
+    expect(game.profile.goalDistance).toBe(nextGoal(30));
+    expect(game.profile.goalDistance).toBe(600);
+  });
+
   it('ignores launch outside aim and update outside run', () => {
     const game = new Game(defaultProfile(), 1);
     game.update(0.1, NO_INPUT);

@@ -27,6 +27,7 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     collectedCoinIds: new Set<string>(),
     distance: 0,
     ended: false,
+    finished: false,
     lastLandingBonus: 0,
     landingCount: 0,
     boostTime: 0,
@@ -54,9 +55,8 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Shared boost-hit logic (chain, thrust duration, steering grace, min-speed kick, hit count)
- * and bookkeeping (triggeredPadIds so a given id never re-fires). Factored out so a second
- * trigger source (e.g. ramps, per a pending addendum - see report-core.md "concerns") can reuse
- * it without duplicating the five field updates. */
+ * and bookkeeping (triggeredPadIds so a given id never re-fires). Used by both flat pads and
+ * ramps, which trigger it identically. */
 function applyBoost(s: RunState, p: PhysicsParams, id: string): void {
   s.triggeredPadIds.add(id);
   s.boostChain = Math.min(p.boostChainMax, s.boostChain + 1);
@@ -166,6 +166,20 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
         if (s.triggeredPadIds.has(pad.id) || !isOnPad(s.x, s.z, pad)) continue;
         applyBoost(s, p, pad.id);
         break padLoop;
+      }
+    }
+  }
+
+  // Ramps are boost points too (any x - they span the full track width): riding onto one while
+  // grounded triggers the same boost as a pad, once per ramp id. (The original game ends a run
+  // at the goal line, not by speed decay - see Game.update - so ramps sustaining a fast run is
+  // the intended feel, not a runaway.)
+  if (s.grounded) {
+    rampLoop: for (const seg of segments) {
+      for (const r of seg.ramps) {
+        if (s.triggeredPadIds.has(r.id) || s.z < r.z || s.z >= r.z + r.length) continue;
+        applyBoost(s, p, r.id);
+        break rampLoop;
       }
     }
   }

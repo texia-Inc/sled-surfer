@@ -17,6 +17,7 @@ export function computeResult(profile: Profile, run: RunState): RunResult {
     earned: Math.floor((run.coinsThisRun + distanceCoins) * mul),
     newBest: distance > profile.bestDistance,
     goalReached,
+    finished: run.finished,
     zoneReached: zoneAt(distance).id,
   };
 }
@@ -85,6 +86,12 @@ export class Game {
   update(dt: number, input: Input): void {
     if (this.phase === 'run' && this.run) {
       stepRun(this.run, input, dt, this.track, this.physicsParams());
+      // The run ends at the goal line, not just by speed decay: crossing it finishes the run
+      // immediately (stepRun itself has no notion of a goal, so this lives here).
+      if (this.run.distance >= this.profile.goalDistance) {
+        this.run.finished = true;
+        this.run.ended = true;
+      }
       if (this.run.ended) {
         this.phase = 'ended';
         this.endedTimer = 0;

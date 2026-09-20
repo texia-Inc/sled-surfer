@@ -8,62 +8,44 @@ const MAX_SECONDS = 600;
 const MAX_STEPS = Math.ceil(MAX_SECONDS / DT);
 const INPUT = { steer: 0, rocket: false };
 
-/** Runs one seed to `results` (capped at MAX_SECONDS). `time` is the duration spent in the
- * `run` phase only (excludes the fixed post-stop `ended` -> `results` delay). */
-function simulateRun(profile: Profile, seed: number): { dist: number; time: number } {
+/** Runs one seed to `results` (capped at MAX_SECONDS, i.e. the game's own "ends within 600s"
+ * requirement: every run must reach `results` - by finishing at the goal line or by stopping -
+ * before this cap). */
+function simulateRun(profile: Profile, seed: number): { dist: number; finished: boolean } {
   const game = new Game(profile, seed);
   game.launch(1);
-  let runSteps = 0;
-  for (let i = 0; i < MAX_STEPS && game.phase !== 'results'; i++) {
-    const wasRun = game.phase === 'run';
-    game.update(DT, INPUT);
-    if (wasRun) runSteps += 1;
-  }
+  for (let i = 0; i < MAX_STEPS && game.phase !== 'results'; i++) game.update(DT, INPUT);
   expect(game.phase).toBe('results');
-  return { dist: game.lastResult!.distance, time: runSteps * DT };
+  return { dist: game.lastResult!.distance, finished: game.lastResult!.finished };
 }
 
-/** Runs seeds 1..6 and returns the average distance and average run time. */
-function averageStats(profile: Profile): { avgDist: number; avgTime: number } {
-  const dists: number[] = [];
-  const times: number[] = [];
+/** Runs seeds 1..6 and returns how many finished (reached goalDistance) vs. stopped short. */
+function finishCount(profile: Profile): number {
+  let finished = 0;
   for (let seed = 1; seed <= 6; seed++) {
-    const { dist, time } = simulateRun(profile, seed);
-    dists.push(dist);
-    times.push(time);
+    if (simulateRun(profile, seed).finished) finished += 1;
   }
-  return {
-    avgDist: dists.reduce((a, b) => a + b, 0) / dists.length,
-    avgTime: times.reduce((a, b) => a + b, 0) / times.length,
-  };
+  return finished;
 }
 
 describe('balance regression', () => {
-  it('fresh profile ends every run within 600s and averages a plausible distance', () => {
-    const { avgDist, avgTime } = averageStats(defaultProfile());
-    // Flow speed model (2026-09-20-flow-design §1): muSnow now matches the base grade instead
-    // of exceeding it, so flat/gentle stretches no longer bleed speed passively — deceleration
-    // is concentrated in collisions. That measurably lengthens fresh, no-steer runs versus the
-    // prior speed-feel tuning, so the plausible-distance band is widened per brief-core.md §5
-    // (300-5000 m) rather than kept at the old, now-inapplicable 400-1600 m band.
-    expect(avgDist).toBeGreaterThan(300);
-    expect(avgDist).toBeLessThan(5000);
-    expect(avgTime).toBeLessThan(600);
+  // The real game ends a run at the goal line (100% on the progress bar), not by speed decay -
+  // a run that never slows down (e.g. one that keeps chaining ramp/pad boosts) is a win, not a
+  // bug. So instead of an average-distance band (distance is now capped by goalDistance), these
+  // assert the game's actual termination contract: every seed reaches `results` within 600s
+  // (finish or stop - enforced per-seed inside simulateRun), and most seeds actually finish
+  // (reach the goal) rather than stopping short, for both a fresh and an upgraded profile.
+
+  it('a fresh profile (goal 600, the default) finishes at least half of 6 seeds within 600s', () => {
+    const finished = finishCount(defaultProfile());
+    expect(finished).toBeGreaterThanOrEqual(3);
   });
 
-  it('upgraded profile travels at least as far on average as a fresh one and still ends', () => {
-    const { avgDist: freshAvg } = averageStats(defaultProfile());
-    const upgraded: Profile = { ...defaultProfile(), upgrades: { slingshot: 10, sled: 10, income: 0 } };
-    const { avgDist: upgradedAvg } = averageStats(upgraded);
-    // Kept loose (>= 0.8x rather than strictly greater): upgrades are redefined by a later part
-    // of this sprint, and the flow speed model already makes a fresh run travel far on its own.
-    expect(upgradedAvg).toBeGreaterThanOrEqual(freshAvg * 0.8);
-  });
-
-  it('max upgrades do not produce a runaway distance (at most 4x the fresh average)', () => {
-    const { avgDist: freshAvg } = averageStats(defaultProfile());
-    const maxUpg: Profile = { ...defaultProfile(), upgrades: { slingshot: 10, sled: 10, income: 0 } };
-    const { avgDist: maxAvg } = averageStats(maxUpg);
-    expect(maxAvg).toBeLessThanOrEqual(freshAvg * 4);
+  it('an upgraded profile (slingshot10/sled10, goal 2000) finishes at least half of 6 seeds within 600s', () => {
+    const upgraded: Profile = {
+      ...defaultProfile(), goalDistance: 2000, upgrades: { slingshot: 10, sled: 10, income: 0 },
+    };
+    const finished = finishCount(upgraded);
+    expect(finished).toBeGreaterThanOrEqual(3);
   });
 });

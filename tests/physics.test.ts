@@ -390,6 +390,41 @@ describe('boost pads', () => {
   });
 });
 
+describe('ramps boost like pads (flow addendum)', () => {
+  it('riding onto a ramp grounded gives boostCount 1, vz >= boostMinSpeed, and does not re-trigger', () => {
+    const seg = emptySegment(0);
+    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let count = 0;
+    for (let i = 0; i < 60 && count === 0; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      count = s.boostCount;
+    }
+    expect(count).toBe(1);
+    expect(s.vz).toBeGreaterThanOrEqual(DEFAULT_PHYSICS.boostMinSpeed);
+    expect(s.triggeredPadIds.has('r1')).toBe(true);
+    // Keep rolling through the same ramp span: no second trigger.
+    run(s, track, 1);
+    expect(s.boostCount).toBe(1);
+  });
+
+  it('a second ramp within the chain window raises boostChain to 2', () => {
+    const seg = emptySegment(0);
+    seg.ramps.push({ id: 'r1', z: 10, length: 6, height: 3 });
+    seg.ramps.push({ id: 'r2', z: 25, length: 6, height: 3 });
+    const track = fakeTrack(() => 0, 'snow', seg);
+    const s = grounded({ vz: 10, z: 8 });
+    let count = 0;
+    for (let i = 0; i < 300 && count < 2; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      count = s.boostCount;
+    }
+    expect(count).toBe(2);
+    expect(s.boostChain).toBe(2);
+  });
+});
+
 describe('rocket', () => {
   it('fires once and adds speed on flat ground', () => {
     const s = grounded({ vz: 10 });

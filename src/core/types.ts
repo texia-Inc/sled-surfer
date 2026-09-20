@@ -71,6 +71,9 @@ export interface RunState {
   collectedCoinIds: Set<string>;
   distance: number;
   ended: boolean;
+  /** True when the run ended by reaching the goal line (distance >= goalDistance), as opposed
+   * to stopping (slow for stopTime). Set by Game.update, not stepRun (which has no goal). */
+  finished: boolean;
   /** 直近の着地ボーナス倍率 (演出用)。なければ 0 */
   lastLandingBonus: number;
   /** ボーナス着地の累計回数 (HUD トースト表示のトリガー用) */
@@ -103,5 +106,7 @@ export interface RunResult {
   earned: number;
   newBest: boolean;
   goalReached: boolean;
+  /** True when the run ended by crossing the goal line rather than stopping. */
+  finished: boolean;
   zoneReached: ZoneId;
 }
