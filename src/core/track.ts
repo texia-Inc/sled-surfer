@@ -13,7 +13,7 @@ export const RAMP_SMALL = { length: 12, height: 3 } as const;
 export const RAMP_BIG = { length: 18, height: 6 } as const;
 
 export const TRACK_GEN = {
-  bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.5, bumpAmpRange: 2.5,
+  bumpCountMin: 2, bumpCountRange: 2, bumpWidthMin: 15, bumpWidthRange: 15, bumpAmpMin: 1.95, bumpAmpRange: 3.25,
   bumpAmpStartScale: 0.35, bumpAmpFullDistance: 1200,
   iceChance: 0.5, iceLengthMin: 40, iceLengthRange: 60,
   /** 1-2 ramps guaranteed per segment: rampMin + floor(rng()*rampRange). */
@@ -29,8 +29,8 @@ export const TRACK_GEN = {
   rampGuideCoins: 3, rampGuideCoinLead: 20, rampGuideCoinSpacing: 3,
   /** No drops before this z (segments 0/1 stay drop-free). */
   dropMinZ: 400,
-  dropChance: 0.35,
-  dropDepthMin: 10, dropDepthRange: 5, dropLength: 20,
+  dropChance: 0.6,
+  dropDepthMin: 15, dropDepthRange: 10, dropLength: 20,
   dropStartMargin: 40, dropEndMargin: 60,
   coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXMargin: 2, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
   archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
@@ -50,8 +50,8 @@ export const TRACK_GEN = {
   cliffHeightMin: 15, cliffHeightRange: 15,
 } as const;
 
-const SLOPE_START = 0.06;
-const SLOPE_END = 0.024;
+const SLOPE_START = 0.12;
+const SLOPE_END = 0.05;
 const SLOPE_FLATTEN_DIST = 3000;
 export const SLOPE_STEP = 0.1;
 export const MAX_SLOPE = 1.5;

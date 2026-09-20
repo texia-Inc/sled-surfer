@@ -51,13 +51,14 @@ export interface PhysicsParams {
 export const DEFAULT_PHYSICS: PhysicsParams = {
   g: 9.81,
   /** Flow speed model (2026-09-20-flow-design §1): flat/gentle slopes no longer bleed speed —
-   * muSnow now matches the initial base grade (0.06) instead of exceeding it, so deceleration
-   * is concentrated in collisions rather than ambient friction. muGrass is defined for future
+   * muSnow matches the initial base grade so deceleration is concentrated in collisions rather
+   * than ambient friction. Terrain sprint §3 steepened the base grade to 0.12 (see track.ts
+   * SLOPE_START), so muSnow moves to match — keep the two in sync. muGrass is defined for future
    * off-piste terrain (unused by surfaceAt yet). */
-  muSnow: 0.06,
+  muSnow: 0.12,
   muIce: 0.02,
   muRoad: 0.035,
-  muGrass: 0.065,
+  muGrass: 0.125,
   kDrag: 0.0005,
   kSteer: 0.25,
   rocketAccel: 15,

@@ -198,9 +198,10 @@ describe('air', () => {
 
 describe('speed model (flow §1: no passive deceleration on the base grade)', () => {
   it('loses less than 5% speed over 5s on a slope matching the base grade (muSnow)', () => {
-    // The real track's initial base grade is slope -0.06 (see track.ts SLOPE_START); muSnow is
-    // tuned to match it so aSlope + aFriction ~= 0 there, leaving only the (small) drag term.
-    const gradeTrack = fakeTrack((z) => -0.06 * z);
+    // The real track's initial base grade is slope -0.12 (see track.ts SLOPE_START, terrain §3);
+    // muSnow is tuned to match it so aSlope + aFriction ~= 0 there, leaving only the (small) drag
+    // term.
+    const gradeTrack = fakeTrack((z) => -0.12 * z);
     const s = run(grounded({ vz: 20 }), gradeTrack, 5);
     expect(s.vz).toBeGreaterThanOrEqual(20 * 0.95);
   });
