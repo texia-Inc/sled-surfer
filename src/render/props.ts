@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Decor, Gate, Segment, Track, ZoneId } from '../core/types';
 import type { PhysicsParams } from '../core/params';
 import { coinWorldY } from '../core/physics';
-import { TRACK_WIDTH } from '../core/track';
+import { RAMP_BIG, RAMP_SMALL, TRACK_WIDTH } from '../core/track';
 import { ZONES } from '../core/zones';
 import { ZONE_THEMES } from './zoneTheme';
 
@@ -13,12 +13,21 @@ const PAD_TEXTURE_SIZE = 256;
 const PAD_TEXTURE_SCROLL = 1.5;
 const PAD_OPACITY = 0.95;
 const PAD_GLOW_SCALE = 1.25;
+const PAD_GLOW_COLOR = 0xffd28a;
+const PAD_GLOW_OPACITY = 0.3;
 const PAD_Y_OFFSET = 0.06;
 const PAD_GLOW_Y_OFFSET = 0.01;
 /** Vertical marker standing at a pad's far edge so it reads from far down the track. */
 const BEACON_HEIGHT = 7;
-const BEACON_COLOR = 0x8ff4ff;
-const BEACON_OPACITY = 0.22;
+const BEACON_COLOR = 0xffc36b;
+const BEACON_OPACITY = 0.18;
+
+// --- Ramp slab / rail geometry constants (share the pad's chevron texture) ---
+const RAMP_SLAB_THICKNESS = 0.5;
+const RAMP_RAIL_SIZE = { w: 0.3, h: 0.6 };
+const RAMP_RAIL_COLOR = 0xd97a1a;
+const RAMP_RAIL_X_INSET = 0.4;
+const RAMP_Y_OFFSET = 0.15;
 
 // --- New obstacle geometry constants ---
 const STUMP_RADIUS = 0.5;
@@ -67,7 +76,8 @@ export class PropManager {
   private readonly rock = new THREE.DodecahedronGeometry(1.0, 0);
   private readonly ball = new THREE.SphereGeometry(0.5, 10, 8);
   private readonly coin = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 16);
-  private readonly plank = new THREE.BoxGeometry(TRACK_WIDTH, 0.4, 1);
+  private readonly rampSlabGeo = new THREE.BoxGeometry(TRACK_WIDTH, RAMP_SLAB_THICKNESS, 1);
+  private readonly rampRailGeo = new THREE.BoxGeometry(RAMP_RAIL_SIZE.w, RAMP_RAIL_SIZE.h, 1);
   private readonly padGeo = new THREE.PlaneGeometry(1, 1);
   /** Unit plane left standing in the XY plane (unrotated) for pad beacons. */
   private readonly beaconGeo = new THREE.PlaneGeometry(1, 1);
@@ -98,18 +108,24 @@ export class PropManager {
   private readonly matRock = new THREE.MeshLambertMaterial({ color: 0x8b8f99, flatShading: true });
   private readonly matSnow = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   private readonly matCoin = new THREE.MeshLambertMaterial({ color: 0xffc928, emissive: 0x553300 });
-  private readonly matPlank = new THREE.MeshLambertMaterial({ color: 0xb8743a, flatShading: true });
+  /** Shared chevron texture (orange ground, white chevrons); ramps clone it at a different
+   * repeat.y (see rampTextureSmall/Big) so all three scroll from the same PAD_TEXTURE_SCROLL. */
   private readonly padTexture = this.createPadTexture();
+  private readonly rampTextureSmall = this.cloneChevronTexture(RAMP_SMALL.length / 3);
+  private readonly rampTextureBig = this.cloneChevronTexture(RAMP_BIG.length / 3);
   private readonly matPad = new THREE.MeshBasicMaterial({
-    color: 0x2bd8ff, transparent: true, opacity: PAD_OPACITY, map: this.padTexture,
+    color: 0xffffff, transparent: true, opacity: PAD_OPACITY, map: this.padTexture,
   });
   private readonly matPadGlow = new THREE.MeshBasicMaterial({
-    color: 0x9ff3ff, transparent: true, opacity: 0.35,
+    color: PAD_GLOW_COLOR, transparent: true, opacity: PAD_GLOW_OPACITY,
   });
   private readonly matBeacon = new THREE.MeshBasicMaterial({
     color: BEACON_COLOR, transparent: true, opacity: BEACON_OPACITY,
     side: THREE.DoubleSide, depthWrite: false,
   });
+  private readonly matRampRail = new THREE.MeshLambertMaterial({ color: RAMP_RAIL_COLOR, flatShading: true });
+  private readonly matRampSmall = new THREE.MeshLambertMaterial({ map: this.rampTextureSmall });
+  private readonly matRampBig = new THREE.MeshLambertMaterial({ map: this.rampTextureBig });
 
   // --- New obstacle materials ---
   private readonly matStump = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
@@ -146,7 +162,7 @@ export class PropManager {
     c.width = PAD_TEXTURE_SIZE;
     c.height = PAD_TEXTURE_SIZE;
     const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#0b4fa0';
+    ctx.fillStyle = '#f39a2b';
     ctx.fillRect(0, 0, PAD_TEXTURE_SIZE, PAD_TEXTURE_SIZE);
     ctx.fillStyle = '#ffffff';
     const chevronH = PAD_TEXTURE_SIZE / 4;
@@ -170,6 +186,16 @@ export class PropManager {
     return texture;
   }
 
+  /** Clones the pad's chevron texture (same canvas, independent offset/repeat) at a different
+   * vertical tiling, for ramps whose length differs from the pad's. */
+  private cloneChevronTexture(repeatY: number): THREE.CanvasTexture {
+    const t = this.padTexture.clone();
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, repeatY);
+    t.needsUpdate = true;
+    return t;
+  }
+
   setTrack(track: Track): void {
     this.dispose();
     this.track = track;
@@ -177,6 +203,8 @@ export class PropManager {
 
   update(z: number, collected: ReadonlySet<string>, dt: number): void {
     this.padTexture.offset.y -= dt * PAD_TEXTURE_SCROLL;
+    this.rampTextureSmall.offset.y -= dt * PAD_TEXTURE_SCROLL;
+    this.rampTextureBig.offset.y -= dt * PAD_TEXTURE_SCROLL;
     const current = this.track.segmentIndexAt(Math.max(0, z));
     const wanted = new Set<number>();
     for (let i = current - BEHIND; i <= current + AHEAD; i++) if (i >= 0) wanted.add(i);
@@ -271,13 +299,26 @@ export class PropManager {
     }
 
     for (const r of seg.ramps) {
-      const mesh = new THREE.Mesh(this.plank, this.matPlank);
+      const big = r.length === RAMP_BIG.length;
+      const slabMat = big ? this.matRampBig : this.matRampSmall;
       const len = Math.sqrt(r.length * r.length + r.height * r.height);
-      mesh.scale.z = len;
       const midZ = r.z + r.length / 2;
-      mesh.position.set(0, this.track.heightAt(midZ) + 0.15, -midZ);
-      mesh.rotation.x = Math.atan2(r.height, r.length);
-      group.add(mesh);
+      const y = this.track.heightAt(midZ) + RAMP_Y_OFFSET;
+      const tilt = Math.atan2(r.height, r.length);
+
+      const slab = new THREE.Mesh(this.rampSlabGeo, slabMat);
+      slab.scale.z = len;
+      slab.position.set(0, y, -midZ);
+      slab.rotation.x = tilt;
+      group.add(slab);
+
+      for (const side of [1, -1]) {
+        const rail = new THREE.Mesh(this.rampRailGeo, this.matRampRail);
+        rail.scale.z = len;
+        rail.position.set(side * (TRACK_WIDTH / 2 - RAMP_RAIL_X_INSET), y, -midZ);
+        rail.rotation.x = tilt;
+        group.add(rail);
+      }
     }
 
     for (const c of seg.coins) {
