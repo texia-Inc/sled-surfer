@@ -52,6 +52,24 @@ describe('targetPose', () => {
   });
 });
 
+describe('portrait framing', () => {
+  it('pulls back, rises and widens the fov on a tall phone screen, in both modes', () => {
+    const landscape = targetPose({ ...BASE, aspect: 16 / 9 }, 'full');
+    const portrait = targetPose({ ...BASE, aspect: 0.48 }, 'full');
+    expect(portrait.pz).toBeGreaterThan(landscape.pz);
+    expect(portrait.py).toBeGreaterThan(landscape.py);
+    expect(portrait.fov).toBeGreaterThan(landscape.fov);
+    const mild = targetPose({ ...BASE, aspect: 0.48 }, 'mild');
+    expect(mild.fov).toBe(portrait.fov);
+    expect(targetPose(BASE, 'full')).toEqual(landscape);
+  });
+  it('looks at the sled x and follows it almost fully', () => {
+    const pose = targetPose({ ...BASE, x: 10 }, 'full');
+    expect(pose.lx).toBe(10);
+    expect(pose.px).toBeGreaterThanOrEqual(8.5);
+  });
+});
+
 describe('stepPose', () => {
   const prev: Pose = { px: 0, py: 0, pz: 0, lx: 0, ly: 0, lz: 0, fov: 60 };
   const target: Pose = { px: 10, py: 10, pz: 99, lx: 10, ly: 10, lz: 10, fov: 66 };

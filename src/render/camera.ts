@@ -41,10 +41,10 @@ function clampAboveGround(p: Pose, groundAt: (z: number, x: number) => number): 
 let pose: Pose | null = null;
 let shakeEnergy = 0;
 
-function toPoseInput(t: CameraTarget): PoseInput {
+function toPoseInput(t: CameraTarget, aspect: number): PoseInput {
   return {
     x: t.x, y: t.y, z: t.z, speed: t.speed, slopeAhead: t.slopeAhead, inDrop: t.inDrop,
-    boosting: t.boosting, rocketing: t.rocketing,
+    boosting: t.boosting, rocketing: t.rocketing, aspect,
   };
 }
 
@@ -58,12 +58,12 @@ function applyPose(camera: THREE.PerspectiveCamera, x: number, y: number, p: Pos
 /** Immediately places the camera at its target pose (no easing), e.g. on restart. */
 export function snapCamera(camera: THREE.PerspectiveCamera, t: CameraTarget): void {
   shakeEnergy = 0;
-  pose = clampAboveGround(targetPose(toPoseInput(t), t.mode), t.groundAt);
+  pose = clampAboveGround(targetPose(toPoseInput(t, camera.aspect), t.mode), t.groundAt);
   applyPose(camera, pose.px, pose.py, pose);
 }
 
 export function updateCamera(camera: THREE.PerspectiveCamera, t: CameraTarget, dt: number): void {
-  const target = targetPose(toPoseInput(t), t.mode);
+  const target = targetPose(toPoseInput(t, camera.aspect), t.mode);
   pose = clampAboveGround(pose ? stepPose(pose, target, dt, t.mode) : target, t.groundAt);
 
   if (t.shake > 0) shakeEnergy = Math.max(shakeEnergy, t.shake);

@@ -15,6 +15,9 @@ export interface PoseInput {
   inDrop: boolean;
   boosting: boolean;
   rocketing: boolean;
+  /** Viewport width / height. Portrait phones get a wider fov and a longer pull-back so the
+   * track ahead stays visible; defaults to a landscape aspect when omitted. */
+  aspect?: number;
 }
 
 export interface Pose {
@@ -32,7 +35,22 @@ const LOOK_AHEAD_Z = 6;
 const LOOK_PITCH_SCALE = 3;
 const FOV_NORMAL = 60;
 const FOV_BOOST = 66;
-const X_FOLLOW = 0.4;
+/** Camera x follows the sled almost fully: the track is up to 36 m wide, so a partial follow
+ * lets the sled leave the frame near the edges (worse on narrow portrait screens). */
+const X_FOLLOW = 0.9;
+const LOOK_X_FOLLOW = 1.0;
+/** Portrait framing: at aspect <= PORTRAIT_FULL_ASPECT the extras apply fully, at >= PORTRAIT_START_ASPECT not at all. */
+const PORTRAIT_START_ASPECT = 1.2;
+const PORTRAIT_FULL_ASPECT = 0.5;
+const PORTRAIT_BACK_EXTRA = 6;
+const PORTRAIT_UP_EXTRA = 3;
+const PORTRAIT_FOV_EXTRA = 20;
+const DEFAULT_ASPECT = 16 / 9;
+
+/** 0 for landscape, 1 for a tall phone screen. */
+export function portraitFactor(aspect: number): number {
+  return clamp01((PORTRAIT_START_ASPECT - aspect) / (PORTRAIT_START_ASPECT - PORTRAIT_FULL_ASPECT));
+}
 
 /** Speed (m/s) at which the dynamic pull-back/pitch starts (k=0) and finishes (k=1). Not named
  * in the brief's constant list, but required so `targetPose` matches its own test contract
@@ -62,15 +80,16 @@ export function targetPose(i: PoseInput, mode: CameraMode): Pose {
   const dropExtra = mild ? 0 : DROP_EXTRA;
   const pitchScale = mild ? 0 : LOOK_PITCH_SCALE;
 
-  const back = BACK + backExtra * k;
-  const up = UP + upExtra * k + (i.inDrop ? dropExtra : 0);
-  const fov = !mild && (i.boosting || i.rocketing) ? FOV_BOOST : FOV_NORMAL;
+  const p = portraitFactor(i.aspect ?? DEFAULT_ASPECT);
+  const back = BACK + backExtra * k + PORTRAIT_BACK_EXTRA * p;
+  const up = UP + upExtra * k + (i.inDrop ? dropExtra : 0) + PORTRAIT_UP_EXTRA * p;
+  const fov = (!mild && (i.boosting || i.rocketing) ? FOV_BOOST : FOV_NORMAL) + PORTRAIT_FOV_EXTRA * p;
 
   return {
     px: i.x * X_FOLLOW,
     py: i.y + up,
     pz: -i.z + back,
-    lx: i.x * X_FOLLOW,
+    lx: i.x * LOOK_X_FOLLOW,
     ly: i.y + 1 + i.slopeAhead * pitchScale,
     lz: -i.z - LOOK_AHEAD_Z,
     fov,
