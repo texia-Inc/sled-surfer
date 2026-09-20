@@ -51,6 +51,10 @@ export const TRACK_GEN = {
   /** Track width (m) varies per segment: widthEnd is uniform in [widthMin, widthMax]; a
    * segment's widthStart is the previous segment's widthEnd (segment 0 starts at TRACK_WIDTH). */
   widthMin: 20, widthMax: 36,
+  /** Two-lane split sections: a centre wall (kind 'wall', x=0, every splitWallSpacing) divides
+   * the track into a left lane (coins) and a right lane (a small ramp + ice). */
+  splitChance: 0.3, splitMinZ: 300, splitLenMin: 60, splitLenRange: 60,
+  splitGapHalf: 3, splitWallSpacing: 6,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -141,7 +145,7 @@ function localHeight(seg: Segment, z: number, x: number): number {
 const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
   tree: 0.8, rock: 1.0, snowman: 0.7,
   stump: 0.7, car: 1.3, bus: 2.2, sign: 0.5, barrier: 1.2, stalagmite: 0.8, crystal: 0.9,
-  hay: 0.9, crate: 0.7, fence: 1.5,
+  hay: 0.9, crate: 0.7, fence: 1.5, wall: 1.6,
 };
 
 /** Whether hitting this obstacle kind breaks it (see physics.ts collision handling) rather than
@@ -149,7 +153,7 @@ const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
 export const OBSTACLE_BREAKABLE: Record<ObstacleKind, boolean> = {
   tree: false, rock: false, snowman: true,
   stump: true, car: false, bus: false, sign: true, barrier: true, stalagmite: false, crystal: false,
-  hay: true, crate: true, fence: true,
+  hay: true, crate: true, fence: true, wall: false,
 };
 
 function generateSegment(seed: number, index: number): Segment {
@@ -230,6 +234,48 @@ function generateSegment(seed: number, index: number): Segment {
     });
   }
 
+  // Two-lane split sections (terrain §4 second half). Drawn from its own salted rng stream (so
+  // the shared `rng` order is unaffected) once ramps/drops are finalised, since the span must
+  // reject any overlap with either. Left lane (x<0) gets coin lines; right lane (x>0) gets a
+  // small ramp and an ice band; a centre wall (x=0) divides them the whole span.
+  const splitRng = mulberry32(hashSeed(seed, index) ^ 0x2545f491);
+  let split: Segment['split'] = null;
+  if (z0 >= TRACK_GEN.splitMinZ && splitRng() < TRACK_GEN.splitChance) {
+    const length = TRACK_GEN.splitLenMin + splitRng() * TRACK_GEN.splitLenRange;
+    const lo = z0 + 30;
+    const hi = z1 - 30 - length;
+    if (hi > lo) {
+      const sz0 = lo + splitRng() * (hi - lo);
+      const sz1 = sz0 + length;
+      const overlapsRamp = ramps.some(
+        (r) => sz0 < r.z + r.length + TRACK_GEN.rampExclusionAfter && sz1 > r.z - TRACK_GEN.rampExclusionBefore,
+      );
+      const overlapsDrop = drops.some(
+        (d) => sz0 < d.z + d.length + TRACK_GEN.rampExclusionAfter
+          && sz1 > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore,
+      );
+      if (!overlapsRamp && !overlapsDrop) split = { z0: sz0, z1: sz1, gapHalf: TRACK_GEN.splitGapHalf };
+    }
+  }
+  const splitWalls: Obstacle[] = [];
+  if (split) {
+    const splitW = widthAt(split.z0);
+    // Centre wall, every splitWallSpacing from z0 to z1.
+    let wallCount = 0;
+    for (let wz = split.z0; wz <= split.z1; wz += TRACK_GEN.splitWallSpacing) {
+      splitWalls.push({ id: `${index}-w${wallCount++}`, kind: 'wall', x: 0, z: wz, r: OBSTACLE_RADIUS.wall });
+    }
+    // Right lane: a small ramp (its own guide/arch coins are added below with every other ramp)
+    // plus an ice band spanning the whole split.
+    const rightX = splitW / 4;
+    const rampZ = split.z0 + (split.z1 - split.z0) / 2 - RAMP_SMALL.length / 2;
+    ramps.push({
+      id: `${index}-rs0`, z: rampZ, length: RAMP_SMALL.length, height: RAMP_SMALL.height,
+      x: rightX, width: TRACK_GEN.rampWidth,
+    });
+    ice.push({ z0: split.z0, z1: split.z1 });
+  }
+
   // Boost pads are drawn from their OWN rng stream (hashSeed salted, not the shared `rng`
   // used above/below), never from `rng` itself. That is deliberate: the brief requires every
   // pre-existing feature (bumps/ice/ramps/corridorX/obstacles/coins) to draw byte-for-byte the
@@ -281,7 +327,19 @@ function generateSegment(seed: number, index: number): Segment {
   }
 
   // Uniform across the full width (not a narrow band): (rng()-0.5) in [-0.5,0.5] * TRACK_WIDTH.
-  const corridorX = (rng() - 0.5) * TRACK_WIDTH;
+  // When this segment has a split, the drawn value is remapped (not redrawn - the shared rng
+  // draw itself is unchanged) into whichever lane its sign already pointed at, so the corridor
+  // rule still guarantees one clear lane through the split instead of straddling the centre wall.
+  const rawCorridorX = (rng() - 0.5) * TRACK_WIDTH;
+  const corridorX = ((): number => {
+    if (!split) return rawCorridorX;
+    const w = widthAt(split.z0);
+    const laneMargin = split.gapHalf + 2;
+    const laneOuter = w / 2 - 1;
+    return rawCorridorX >= 0
+      ? Math.min(Math.max(rawCorridorX, laneMargin), laneOuter)
+      : Math.max(Math.min(rawCorridorX, -laneMargin), -laneOuter);
+  })();
   const obstacles: Obstacle[] = [];
   const count = Math.min(
     TRACK_GEN.obstacleMax,
@@ -296,12 +354,16 @@ function generateSegment(seed: number, index: number): Segment {
     const x = (rng() * 2 - 1) * halfX;
     const kind = zone.obstacleKinds[Math.floor(rng() * zone.obstacleKinds.length)];
     if (Math.abs(x - corridorX) < CORRIDOR_HALF) continue;
+    if (split && z >= split.z0 && z <= split.z1 && Math.abs(x) < split.gapHalf + 2) continue;
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (drops.some((d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter)) continue;
     const r = OBSTACLE_RADIUS[kind];
     if (boosts.some((b) => Math.abs(x - b.x) < b.width / 2 + r && z >= b.z - r && z <= b.z + b.length + r)) continue;
     obstacles.push({ id: `${index}-o${obstacles.length}`, kind, x, z, r });
   }
+  // Split walls are appended after the density-based random obstacles so they don't count toward
+  // (and don't get crowded out by) the distance-scaled obstacle budget above.
+  obstacles.push(...splitWalls);
 
   // Ground coin lines skip any coin that would land inside a drop's span (it would float over
   // the void instead of sitting on the ground); the drop's own arch coins (below) cover that
@@ -341,6 +403,19 @@ function generateSegment(seed: number, index: number): Segment {
         z: r.z - TRACK_GEN.rampGuideCoinLead - k * TRACK_GEN.rampGuideCoinSpacing,
         lift: 0,
       });
+    }
+  }
+  // Split left lane: two 8-coin lines at x=-W/4, spread across the span so the whole lane reads
+  // as the "coin" side against the ramp+ice "right" side.
+  if (split) {
+    const leftX = -widthAt(split.z0) / 4;
+    const spanLen = split.z1 - split.z0;
+    const lineStarts = [split.z0 + 10, split.z0 + spanLen / 2];
+    let splitCoinCount = 0;
+    for (const lineStart of lineStarts) {
+      for (let k = 0; k < 8; k++) {
+        coins.push({ id: `${index}-sc${splitCoinCount++}`, x: leftX, z: lineStart + k * TRACK_GEN.coinSpacing, lift: 0 });
+      }
     }
   }
 
@@ -396,8 +471,13 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
+  // Signpost ahead of the split, warning the player it's coming.
+  if (split) {
+    decor.push({ id: `${index}-d${dCount++}`, kind: 'signpost', x: 0, z: split.z0 - 25, y: 0, scale: 1 });
+  }
+
   return {
-    index, z0, z1, widthStart, widthEnd, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
+    index, z0, z1, widthStart, widthEnd, split, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
     zone: zone.id, gate, decor,
   };
 }

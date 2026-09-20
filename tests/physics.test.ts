@@ -11,7 +11,7 @@ const DT = 1 / 120;
 function emptySegment(index: number): Segment {
   return {
     index, z0: index * 200, z1: index * 200 + 200, widthStart: DEFAULT_PHYSICS.trackWidth, widthEnd: DEFAULT_PHYSICS.trackWidth,
-    corridorX: 0, bumps: [], ice: [], ramps: [],
+    split: null, corridorX: 0, bumps: [], ice: [], ramps: [],
     obstacles: [], coins: [], boosts: [], drops: [], zone: 'snowfield', gate: null, decor: [],
   };
 }

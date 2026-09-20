@@ -3,11 +3,11 @@ export type Surface = 'snow' | 'ice' | 'road';
 export type ObstacleKind =
   | 'tree' | 'rock' | 'snowman'
   | 'stump' | 'car' | 'bus' | 'sign' | 'barrier' | 'stalagmite' | 'crystal'
-  | 'hay' | 'crate' | 'fence';
+  | 'hay' | 'crate' | 'fence' | 'wall';
 export type UpgradeKind = 'slingshot' | 'sled' | 'income';
 
 export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave';
-export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff';
+export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff' | 'signpost';
 
 /** 当たり判定なしの見た目用オブジェクト。y は地面からの高さ (stalactite の先端の基準点用)。他は 0 */
 export interface Decor { id: string; kind: DecorKind; x: number; z: number; y: number; scale: number; }
@@ -30,6 +30,9 @@ export interface Segment {
   z1: number;
   widthStart: number;
   widthEnd: number;
+  /** Two-lane split section, or null when this segment has none. gapHalf is the half-width of
+   * the impassable centre gap (the wall obstacles sit at x=0, spaced along z0..z1). */
+  split: { z0: number; z1: number; gapHalf: number } | null;
   corridorX: number;
   bumps: Bump[];
   ice: IceBand[];

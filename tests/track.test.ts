@@ -61,21 +61,31 @@ describe('createTrack', () => {
   });
 
   it('increases obstacle count with distance', () => {
+    // Split centre walls (terrain §4) are additive to this distance-scaled budget, not part of
+    // it - a segment with a split legitimately has more obstacles than the formula predicts, so
+    // they're excluded here.
     const t = createTrack(5);
-    expect(t.getSegment(0).obstacles.length).toBe(TRACK_GEN.obstacleBase);
+    const nonWall = (s: ReturnType<ReturnType<typeof createTrack>['getSegment']>): number => (
+      s.obstacles.filter((o) => o.kind !== 'wall').length
+    );
+    expect(nonWall(t.getSegment(0))).toBe(TRACK_GEN.obstacleBase);
     const z10 = 10 * SEGMENT_LENGTH;
     const expected10 = Math.round(
       (TRACK_GEN.obstacleBase + Math.floor(z10 / TRACK_GEN.obstaclePerMeters)) * zoneAt(z10).obstacleDensityMul,
     );
-    expect(t.getSegment(10).obstacles.length).toBe(expected10);
-    expect(t.getSegment(40).obstacles.length).toBe(TRACK_GEN.obstacleMax);
+    expect(nonWall(t.getSegment(10))).toBe(expected10);
+    expect(nonWall(t.getSegment(40))).toBe(TRACK_GEN.obstacleMax);
   });
 
-  it('does not put obstacles on ramps', () => {
+  it('does not put non-wall obstacles on ramps', () => {
+    // Split wall obstacles (kind 'wall', x=0) deliberately run the length of the split span,
+    // which includes the split's own right-lane ramp's z-range - they're on a different lane
+    // (x=0 vs the ramp's x=+W/4) so they don't actually sit on the ramp; only x=0-width ramps
+    // (drop ramps) would ever conflict with them, and drop/split spans are mutually exclusive.
     const t = createTrack(9);
     for (let i = 0; i < 40; i++) {
       const s = t.getSegment(i);
-      for (const r of s.ramps) for (const o of s.obstacles) {
+      for (const r of s.ramps) for (const o of s.obstacles.filter((ob) => ob.kind !== 'wall')) {
         const onRamp = o.z >= r.z - TRACK_GEN.rampExclusionBefore && o.z <= r.z + r.length + TRACK_GEN.rampExclusionAfter;
         expect(onRamp).toBe(false);
       }
@@ -98,15 +108,19 @@ describe('createTrack', () => {
     expect(found).toBe(true);
   });
 
-  it('every segment 0..20 has 1-2 ramps, each a small or big template, ids unique per segment', () => {
+  it('every segment 0..20 has 1-2 base ramps, each a small or big template, ids unique per segment', () => {
+    // A split's own right-lane ramp (id `${index}-rs0`, terrain §4) is a distinct feature, not
+    // part of the "1-2 guaranteed ramps" contract, so it's excluded from the count/template check
+    // (ids overall - including it - must still all be unique).
     const t = createTrack(11);
     for (let i = 0; i <= 20; i++) {
       const s = t.getSegment(i);
-      expect(s.ramps.length).toBeGreaterThanOrEqual(1);
-      expect(s.ramps.length).toBeLessThanOrEqual(2);
+      const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs'));
+      expect(baseRamps.length).toBeGreaterThanOrEqual(1);
+      expect(baseRamps.length).toBeLessThanOrEqual(2);
       const ids = new Set(s.ramps.map((r) => r.id));
       expect(ids.size).toBe(s.ramps.length);
-      for (const r of s.ramps) {
+      for (const r of baseRamps) {
         const matchesSmall = r.length === RAMP_SMALL.length && r.height === RAMP_SMALL.height;
         const matchesBig = r.length === RAMP_BIG.length && r.height === RAMP_BIG.height;
         expect(matchesSmall || matchesBig).toBe(true);
@@ -114,13 +128,14 @@ describe('createTrack', () => {
     }
   });
 
-  it('ramps within a segment are kept at least rampMinGap metres apart', () => {
+  it('base ramps within a segment are kept at least rampMinGap metres apart', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const t = createTrack(seed);
       for (let i = 0; i <= 20; i++) {
         const s = t.getSegment(i);
-        if (s.ramps.length < 2) continue;
-        const zs = s.ramps.map((r) => r.z).sort((a, b) => a - b);
+        const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs'));
+        if (baseRamps.length < 2) continue;
+        const zs = baseRamps.map((r) => r.z).sort((a, b) => a - b);
         for (let k = 1; k < zs.length; k++) {
           expect(zs[k] - zs[k - 1]).toBeGreaterThanOrEqual(TRACK_GEN.rampMinGap);
         }
@@ -456,6 +471,87 @@ describe('createTrack', () => {
     }
   });
 
+  it('splits only start at or after splitMinZ', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (s.split) expect(s.split.z0).toBeGreaterThanOrEqual(TRACK_GEN.splitMinZ);
+      }
+    }
+  });
+
+  it('split walls sit only at x=0, spaced within the split span', () => {
+    let found = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (!s.split) continue;
+        const walls = s.obstacles.filter((o) => o.kind === 'wall');
+        expect(walls.length).toBeGreaterThan(0);
+        for (const w of walls) {
+          expect(w.x).toBe(0);
+          expect(w.z).toBeGreaterThanOrEqual(s.split.z0 - 1e-9);
+          expect(w.z).toBeLessThanOrEqual(s.split.z1 + 1e-9);
+        }
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('both lanes have an obstacle-free x at every wall z inside a split', () => {
+    let found = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (!s.split) continue;
+        const w = t.widthAt(s.split.z0);
+        const lo = s.split.gapHalf + 2;
+        const hi = w / 2 - 1;
+        const nonWallObstacles = s.obstacles.filter((o) => o.kind !== 'wall');
+        const clearSomewhereInLane = (sign: 1 | -1, wallZ: number): boolean => {
+          for (let step = 0; step <= 20; step++) {
+            const x = sign * (lo + ((hi - lo) * step) / 20);
+            const blocked = nonWallObstacles.some(
+              (o) => Math.abs(o.x - x) < o.r + 0.3 && Math.abs(o.z - wallZ) <= 3,
+            );
+            if (!blocked) return true;
+          }
+          return false;
+        };
+        for (const wall of s.obstacles.filter((o) => o.kind === 'wall')) {
+          expect(clearSomewhereInLane(-1, wall.z)).toBe(true);
+          expect(clearSomewhereInLane(1, wall.z)).toBe(true);
+        }
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('split puts the ramp and ice on the right (x>0) and coin lines on the left (x<0)', () => {
+    let found = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 20; i++) {
+        const s = t.getSegment(i);
+        if (!s.split) continue;
+        const splitRamp = s.ramps.find((r) => r.id.includes('-rs'));
+        expect(splitRamp).toBeDefined();
+        expect(splitRamp!.x).toBeGreaterThan(0);
+        expect(s.ice.some((band) => band.z0 === s.split!.z0 && band.z1 === s.split!.z1)).toBe(true);
+        const splitCoins = s.coins.filter((c) => c.id.includes('-sc'));
+        expect(splitCoins.length).toBeGreaterThan(0);
+        for (const c of splitCoins) expect(c.x).toBeLessThan(0);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   it('isOnPad is true inside the pad and false just outside on each axis', () => {
     const pad = { id: 'p', x: 0, z: 10, length: 6, width: 4 };
     expect(isOnPad(0, 10, pad)).toBe(true);
@@ -493,7 +589,7 @@ describe('zone-aware generation', () => {
       expect(Math.abs(d.x)).toBeGreaterThanOrEqual(TRACK_GEN.decorBankMin);
     }
     for (const d of seg.decor) {
-      expect(d.kind === 'pine' || d.kind === 'cliff').toBe(true);
+      expect(d.kind === 'pine' || d.kind === 'cliff' || d.kind === 'signpost').toBe(true);
     }
   });
 
@@ -508,7 +604,7 @@ describe('zone-aware generation', () => {
       expect(d.y).toBeGreaterThanOrEqual(TRACK_GEN.stalactiteYMin);
     }
     for (const d of seg.decor) {
-      expect(d.kind === 'stalactite' || d.kind === 'cliff').toBe(true);
+      expect(d.kind === 'stalactite' || d.kind === 'cliff' || d.kind === 'signpost').toBe(true);
     }
   });
 
