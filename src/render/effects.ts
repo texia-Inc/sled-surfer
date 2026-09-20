@@ -8,6 +8,8 @@ export interface EffectsInput {
   boostHits: number;
   landingCount: number;
   hitCount: number;
+  /** Cumulative count of broken obstacles this run; a burst fires when it increases. */
+  breakCount: number;
   dt: number;
 }
 
@@ -28,6 +30,13 @@ const BURST_SIZE = 0.25;
 
 const LANDING_COUNT = 25;
 const LANDING_LIFE = 0.6;
+
+/** Shatter burst on a breakable obstacle: warm brown/yellow, wider spread than the boost burst. */
+const BREAK_BURST_CAPACITY = 60;
+const BREAK_BURST_COUNT = 30;
+const BREAK_BURST_LIFE = 0.7;
+const BREAK_BURST_SPEED = 3;
+const BREAK_BURST_COLOR = 0xd9a05b;
 
 const LINE_COUNT = 24;
 const LINE_RADIUS_MIN = 3.5;
@@ -141,14 +150,17 @@ class SpeedLines {
 export class Effects {
   private readonly spray = new ParticlePool(SPRAY_CAPACITY, 0xffffff, SPRAY_SIZE);
   private readonly burst = new ParticlePool(BURST_CAPACITY, 0x8ff4ff, BURST_SIZE);
+  private readonly breakBurst = new ParticlePool(BREAK_BURST_CAPACITY, BREAK_BURST_COLOR, BURST_SIZE);
   private readonly lines: SpeedLines;
   private spraySpawnAccum = 0;
   private lastBoostHits = 0;
   private lastLandingCount = 0;
+  private lastBreakCount = 0;
 
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     scene.add(this.spray.points);
     scene.add(this.burst.points);
+    scene.add(this.breakBurst.points);
     this.lines = new SpeedLines(camera);
   }
 
@@ -201,14 +213,31 @@ export class Effects {
       this.lastLandingCount = i.landingCount;
     }
 
+    if (i.breakCount !== this.lastBreakCount) {
+      if (i.breakCount > this.lastBreakCount) {
+        for (let k = 0; k < BREAK_BURST_COUNT; k++) {
+          this.breakBurst.spawn(
+            i.x, i.y + 0.2, -i.z,
+            (Math.random() - 0.5) * 2 * BREAK_BURST_SPEED,
+            1 + Math.random() * 2,
+            (Math.random() - 0.5) * 2 * BREAK_BURST_SPEED,
+            BREAK_BURST_LIFE,
+          );
+        }
+      }
+      this.lastBreakCount = i.breakCount;
+    }
+
     this.spray.step(i.dt);
     this.burst.step(i.dt);
+    this.breakBurst.step(i.dt);
     this.lines.update(i.speed, i.boosting, i.dt);
   }
 
   dispose(): void {
     this.spray.dispose();
     this.burst.dispose();
+    this.breakBurst.dispose();
     this.lines.dispose();
   }
 }

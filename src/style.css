@@ -6,6 +6,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .stat { position: absolute; top: 16px; font-size: 22px; }
 .hud .stat.left { left: 16px; }
 .hud .stat.right { right: 40px; text-align: right; }
+.hud .stat.right .coin-toast { position: absolute; right: 0; top: 30px; font-size: 16px; font-weight: 700; color: #ffd23f; opacity: 0; transition: opacity .2s; white-space: nowrap; }
+.hud .stat.right .coin-toast.on { opacity: 1; }
 .hud .stat small { display: block; font-size: 12px; opacity: .85; font-weight: 500; }
 .hud .stat.left .speed { font-size: 18px; font-weight: 700; }
 .hud .progress { position: absolute; right: 12px; top: 90px; bottom: 120px; width: 14px; background: rgba(255,255,255,.35); border-radius: 7px; }

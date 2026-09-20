@@ -4,19 +4,22 @@ import { SEGMENT_LENGTH, TRACK_WIDTH } from '../core/track';
 import { zoneAt } from '../core/zones';
 import { blendedThemeColor } from './zoneTheme';
 
-const SIDE_MARGIN = 8;
-const WIDTH_SEGMENTS = 24;
+const SIDE_MARGIN = 16;
+const WIDTH_SEGMENTS = 40;
 const LENGTH_SEGMENTS = 200;
 const BEHIND = 1;
 const AHEAD = 3;
 
-/** City lane-marking colour and the |x| bands they occupy (metres from centerline). */
+/** City lane-marking colour and the |x| bands they occupy (metres from centerline), scaled for
+ * TRACK_WIDTH 28: two dashed lines plus a solid pair of edge lines near the track boundary. */
 const STRIPE_WHITE = new THREE.Color(0.95, 0.95, 0.95);
-const DASH_X_MIN = 2.3;
-const DASH_X_MAX = 2.7;
+const DASH1_X_MIN = 4.6;
+const DASH1_X_MAX = 5.0;
+const DASH2_X_MIN = 9.6;
+const DASH2_X_MAX = 10.0;
 const DASH_PERIOD = 4;
-const EDGE_X_MIN = 7.6;
-const EDGE_X_MAX = 8.0;
+const EDGE_X_MIN = 13.6;
+const EDGE_X_MAX = 14.0;
 
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
@@ -84,7 +87,8 @@ export class TerrainManager {
       }
       if (onTrack && zoneAt(gz).id === 'city') {
         const ax = Math.abs(lx);
-        const dashed = ax >= DASH_X_MIN && ax <= DASH_X_MAX && Math.floor(gz / DASH_PERIOD) % 2 === 0;
+        const inDashBand = (ax >= DASH1_X_MIN && ax <= DASH1_X_MAX) || (ax >= DASH2_X_MIN && ax <= DASH2_X_MAX);
+        const dashed = inDashBand && Math.floor(gz / DASH_PERIOD) % 2 === 0;
         const edge = ax >= EDGE_X_MIN && ax <= EDGE_X_MAX;
         if (dashed || edge) c = STRIPE_WHITE;
       }

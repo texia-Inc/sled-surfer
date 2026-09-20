@@ -7,6 +7,8 @@ const CHAIN_POP_SECONDS = 0.15;
 const SPEED_WARN = 60;
 const SPEED_HOT = 100;
 const ZONE_BANNER_SECONDS = 2.0;
+const COIN_TOAST_SECONDS = 0.6;
+const COIN_TOAST_TEXT = '+2';
 
 export class Hud {
   private readonly root: HTMLElement;
@@ -19,19 +21,22 @@ export class Hud {
   private readonly toast: HTMLElement;
   private readonly chain: HTMLElement;
   private readonly zone: HTMLElement;
+  private readonly coinToast: HTMLElement;
   private toastUntil = 0;
   private lastLandingCount = 0;
   private chainPopUntil = 0;
   private lastBoostCount = 0;
   private lastZone: ZoneId | null = null;
   private zoneUntil = 0;
+  private lastBreakCount = 0;
+  private coinToastUntil = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void) {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML = `
       <div class="stat left"><span class="dist">0 m</span><small class="speed">0 km/h</small></div>
-      <div class="stat right"><span class="coins">0</span><small>COINS</small></div>
+      <div class="stat right"><span class="coins">0</span><small>COINS</small><div class="coin-toast"></div></div>
       <div class="progress"><div class="fill"></div><div class="flag">🏁</div><div class="pct">0%</div></div>
       <button class="rocket" type="button">🚀</button>
       <div class="toast"></div>
@@ -48,6 +53,7 @@ export class Hud {
     this.toast = this.root.querySelector<HTMLElement>('.toast')!;
     this.chain = this.root.querySelector<HTMLElement>('.chain')!;
     this.zone = this.root.querySelector<HTMLElement>('.zone')!;
+    this.coinToast = this.root.querySelector<HTMLElement>('.coin-toast')!;
     this.rocket.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       onRocket();
@@ -74,6 +80,14 @@ export class Hud {
     }
     if (!run) this.lastLandingCount = 0;
     this.toast.classList.toggle('on', performance.now() < this.toastUntil);
+
+    if (run && run.breakCount !== this.lastBreakCount) {
+      this.lastBreakCount = run.breakCount;
+      this.coinToast.textContent = COIN_TOAST_TEXT;
+      this.coinToastUntil = performance.now() + COIN_TOAST_SECONDS * 1000;
+    }
+    if (!run) this.lastBreakCount = 0;
+    this.coinToast.classList.toggle('on', performance.now() < this.coinToastUntil);
 
     const chainActive = !!run && run.boostChainTime > 0 && run.boostChain > 0;
     if (run && run.boostCount !== this.lastBoostCount) {

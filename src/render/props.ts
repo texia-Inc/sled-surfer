@@ -29,6 +29,20 @@ const RAMP_RAIL_COLOR = 0xd97a1a;
 const RAMP_RAIL_X_INSET = 0.4;
 const RAMP_Y_OFFSET = 0.15;
 
+// --- Breakable obstacle geometry constants ---
+const HAY_RADIUS = 0.9;
+const HAY_LENGTH = 1.0;
+const HAY_COLOR = 0xe0b84a;
+const CRATE_SIZE = 1.2;
+const CRATE_EDGE_SIZE = 1.3;
+const CRATE_COLOR = 0xa06a2c;
+const CRATE_EDGE_COLOR = 0x6b4620;
+const FENCE_RAIL_SIZE = { w: 3.0, h: 1.1, d: 0.15 };
+const FENCE_POST_SIZE = { w: 0.15, h: 1.3, d: 0.15 };
+const FENCE_POST_X = 1.35;
+const FENCE_RAIL_Y = 0.6;
+const FENCE_COLOR = 0x8a5a2b;
+
 // --- New obstacle geometry constants ---
 const STUMP_RADIUS = 0.5;
 const STUMP_HEIGHT = 0.8;
@@ -49,6 +63,13 @@ const BUILDING_SIZE = { w: 7, d: 7 };
 const BUILDING_ROOF = { w: 7.2, h: 0.6, d: 7.2 };
 const STALACTITE_RADIUS = 0.6;
 const STALACTITE_HEIGHT = 2.4;
+const CLIFF_SIZE = { w: 6, d: 8 };
+const CLIFF_Y_SINK = 2;
+/** Radians of y-rotation jitter applied to cliffs, deterministic from `d.z`. */
+const CLIFF_ROTATION_RANGE = 0.6;
+const CLIFF_COLORS: Record<ZoneId, number> = {
+  snowfield: 0xe6eef7, forest: 0x7a5a3c, city: 0x7d8189, cave: 0x1e2438,
+};
 
 // --- Gate geometry constants ---
 const GATE_POST_RADIUS = 0.25;
@@ -62,9 +83,19 @@ const GATE_NAME_H = 96;
 const GATE_NAME_PLANE_H = 1.1;
 const GATE_NAME_Z_OFFSET = 0.2;
 
+/** Deterministic pseudo-random y-rotation for a cliff, derived from its z so it stays stable
+ * across rebuilds (the segment isn't re-generated, but a fresh Track uses a different z per
+ * cliff anyway; this just avoids storing an extra random field on Decor). */
+function cliffRotation(z: number): number {
+  const s = Math.sin(z * 12.9898) * 43758.5453;
+  const frac = s - Math.floor(s);
+  return (frac - 0.5) * CLIFF_ROTATION_RANGE;
+}
+
 interface Bundle {
   group: THREE.Group;
   coins: Map<string, THREE.Mesh>;
+  obstacles: Map<string, THREE.Object3D>;
 }
 
 export class PropManager {
@@ -93,10 +124,18 @@ export class PropManager {
   private readonly stalagmiteGeo = new THREE.ConeGeometry(STALAGMITE_RADIUS, STALAGMITE_HEIGHT, 7);
   private readonly crystalGeo = new THREE.OctahedronGeometry(CRYSTAL_RADIUS, 0);
 
+  // --- Breakable obstacle geometries ---
+  private readonly hayGeo = new THREE.CylinderGeometry(HAY_RADIUS, HAY_RADIUS, HAY_LENGTH, 12);
+  private readonly crateGeo = new THREE.BoxGeometry(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE);
+  private readonly crateEdgeGeo = new THREE.BoxGeometry(CRATE_EDGE_SIZE, CRATE_EDGE_SIZE, CRATE_EDGE_SIZE);
+  private readonly fenceRailGeo = new THREE.BoxGeometry(FENCE_RAIL_SIZE.w, FENCE_RAIL_SIZE.h, FENCE_RAIL_SIZE.d);
+  private readonly fencePostGeo = new THREE.BoxGeometry(FENCE_POST_SIZE.w, FENCE_POST_SIZE.h, FENCE_POST_SIZE.d);
+
   // --- Decor geometries (shared unit shapes, scaled per-instance) ---
   private readonly buildingGeo = new THREE.BoxGeometry(BUILDING_SIZE.w, 1, BUILDING_SIZE.d);
   private readonly buildingRoofGeo = new THREE.BoxGeometry(BUILDING_ROOF.w, BUILDING_ROOF.h, BUILDING_ROOF.d);
   private readonly stalactiteGeo = new THREE.ConeGeometry(STALACTITE_RADIUS, STALACTITE_HEIGHT, 7);
+  private readonly cliffGeo = new THREE.BoxGeometry(CLIFF_SIZE.w, 1, CLIFF_SIZE.d);
 
   // --- Gate geometries ---
   private readonly gatePostGeo = new THREE.CylinderGeometry(GATE_POST_RADIUS, GATE_POST_RADIUS, GATE_POST_HEIGHT, 8);
@@ -140,9 +179,18 @@ export class PropManager {
   private readonly matStalagmite = new THREE.MeshLambertMaterial({ color: 0x5c6b7a, flatShading: true });
   private readonly matCrystal = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
 
+  // --- Breakable obstacle materials ---
+  private readonly matHay = new THREE.MeshLambertMaterial({ color: HAY_COLOR, flatShading: true });
+  private readonly matCrate = new THREE.MeshLambertMaterial({ color: CRATE_COLOR, flatShading: true });
+  private readonly matCrateEdge = new THREE.MeshLambertMaterial({ color: CRATE_EDGE_COLOR, flatShading: true });
+  private readonly matFence = new THREE.MeshLambertMaterial({ color: FENCE_COLOR, flatShading: true });
+
   // --- Decor materials (pine reuses the tree materials; stalactite reuses stalagmite's) ---
   private readonly matBuilding = new THREE.MeshLambertMaterial({ color: 0x5c6878, flatShading: true });
   private readonly matBuildingRoof = new THREE.MeshLambertMaterial({ color: 0x3c4552, flatShading: true });
+  private readonly matCliff = new Map<ZoneId, THREE.MeshLambertMaterial>(
+    ZONES.map((z) => [z.id, new THREE.MeshLambertMaterial({ color: CLIFF_COLORS[z.id], flatShading: true })]),
+  );
 
   // --- Gate materials (one per zone, keyed by the zone the gate leads into) ---
   private readonly matGatePost = new THREE.MeshLambertMaterial({ color: 0xdedede, flatShading: true });
@@ -201,7 +249,7 @@ export class PropManager {
     this.track = track;
   }
 
-  update(z: number, collected: ReadonlySet<string>, dt: number): void {
+  update(z: number, collected: ReadonlySet<string>, dt: number, brokenIds: ReadonlySet<string>): void {
     this.padTexture.offset.y -= dt * PAD_TEXTURE_SCROLL;
     this.rampTextureSmall.offset.y -= dt * PAD_TEXTURE_SCROLL;
     this.rampTextureBig.offset.y -= dt * PAD_TEXTURE_SCROLL;
@@ -226,6 +274,9 @@ export class PropManager {
         mesh.visible = !collected.has(id);
         mesh.rotation.y += COIN_SPIN * dt;
       }
+      for (const [id, holder] of b.obstacles) {
+        holder.visible = !brokenIds.has(id);
+      }
     }
   }
 
@@ -237,6 +288,7 @@ export class PropManager {
   private build(seg: Segment): Bundle {
     const group = new THREE.Group();
     const coins = new Map<string, THREE.Mesh>();
+    const obstacles = new Map<string, THREE.Object3D>();
 
     for (const o of seg.obstacles) {
       const y = this.track.heightAt(o.z);
@@ -286,6 +338,26 @@ export class PropManager {
         const crystal = new THREE.Mesh(this.crystalGeo, this.matCrystal);
         crystal.position.y = CRYSTAL_RADIUS;
         holder.add(crystal);
+      } else if (o.kind === 'hay') {
+        const hay = new THREE.Mesh(this.hayGeo, this.matHay);
+        hay.rotation.z = Math.PI / 2;
+        hay.position.y = HAY_RADIUS;
+        holder.add(hay);
+      } else if (o.kind === 'crate') {
+        const edge = new THREE.Mesh(this.crateEdgeGeo, this.matCrateEdge);
+        edge.position.y = CRATE_EDGE_SIZE / 2;
+        const crate = new THREE.Mesh(this.crateGeo, this.matCrate);
+        crate.position.y = CRATE_SIZE / 2;
+        holder.add(edge, crate);
+      } else if (o.kind === 'fence') {
+        const rail = new THREE.Mesh(this.fenceRailGeo, this.matFence);
+        rail.position.y = FENCE_RAIL_Y;
+        holder.add(rail);
+        for (const px of [-FENCE_POST_X, 0, FENCE_POST_X]) {
+          const post = new THREE.Mesh(this.fencePostGeo, this.matFence);
+          post.position.set(px, FENCE_POST_SIZE.h / 2, 0);
+          holder.add(post);
+        }
       } else {
         const base = new THREE.Mesh(this.ball, this.matSnow);
         base.position.y = 0.5;
@@ -296,6 +368,7 @@ export class PropManager {
         holder.add(base, head);
       }
       group.add(holder);
+      obstacles.set(o.id, holder);
     }
 
     for (const r of seg.ramps) {
@@ -362,13 +435,13 @@ export class PropManager {
       group.add(beaconCross);
     }
 
-    for (const d of seg.decor) this.buildDecor(group, d);
+    for (const d of seg.decor) this.buildDecor(group, d, seg.zone);
     if (seg.gate) this.buildGate(group, seg.gate);
 
-    return { group, coins };
+    return { group, coins, obstacles };
   }
 
-  private buildDecor(group: THREE.Group, d: Decor): void {
+  private buildDecor(group: THREE.Group, d: Decor, zone: ZoneId): void {
     const ground = this.track.heightAt(d.z);
     if (d.kind === 'pine') {
       const holder = new THREE.Group();
@@ -394,6 +467,12 @@ export class PropManager {
       stalactite.rotation.x = Math.PI;
       stalactite.position.set(d.x, ground + d.y, -d.z);
       group.add(stalactite);
+    } else if (d.kind === 'cliff') {
+      const cliff = new THREE.Mesh(this.cliffGeo, this.matCliff.get(zone)!);
+      cliff.scale.y = d.scale;
+      cliff.position.set(d.x, ground + d.scale / 2 - CLIFF_Y_SINK, -d.z);
+      cliff.rotation.y = cliffRotation(d.z);
+      group.add(cliff);
     }
   }
 

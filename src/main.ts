@@ -22,6 +22,7 @@ const STEER_SMOOTH_RATE = 10;
 const SHAKE_BOOST = 0.6;
 const SHAKE_LANDING = 0.5;
 const SHAKE_STUN = 1.0;
+const SHAKE_BREAK = 0.35;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 const FOG_LERP_RATE = 2;
 
@@ -103,6 +104,7 @@ function boot(): void {
   let lastBoostCount = 0;
   let lastLandingCountShake = 0;
   let lastStunTime = 0;
+  let lastBreakCountShake = 0;
 
   function frame(now: number): void {
     const frameDt = Math.min(MAX_FRAME_DT, (now - last) / 1000);
@@ -152,13 +154,16 @@ function boot(): void {
       if (run.boostCount > lastBoostCount) shake = Math.max(shake, SHAKE_BOOST);
       if (run.landingCount > lastLandingCountShake) shake = Math.max(shake, SHAKE_LANDING);
       if (run.stunTime > 0 && lastStunTime === 0) shake = Math.max(shake, SHAKE_STUN);
+      if (run.breakCount > lastBreakCountShake) shake = Math.max(shake, SHAKE_BREAK);
       lastBoostCount = run.boostCount;
       lastLandingCountShake = run.landingCount;
       lastStunTime = run.stunTime;
+      lastBreakCountShake = run.breakCount;
     } else {
       lastBoostCount = 0;
       lastLandingCountShake = 0;
       lastStunTime = 0;
+      lastBreakCountShake = 0;
     }
 
     (scene.background as THREE.Color).copy(blendedThemeColor(z, (t) => t.sky, skyTmp));
@@ -169,7 +174,7 @@ function boot(): void {
     fog.far += (fogTarget.fogFar - fog.far) * fogK;
 
     terrain.update(z);
-    props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt);
+    props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt, run ? run.brokenObstacleIds : EMPTY_COINS);
     player.update({
       x, y, z,
       pitchSlope: game.track.slopeAt(z),
@@ -187,6 +192,7 @@ function boot(): void {
       boostHits: run ? run.boostCount : 0,
       landingCount: run ? run.landingCount : 0,
       hitCount: 0,
+      breakCount: run ? run.breakCount : 0,
       dt: frameDt,
     });
     updateCamera(camera, { x, y, z, rocketing, boosting, shake }, frameDt);
