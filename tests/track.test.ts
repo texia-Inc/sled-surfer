@@ -433,8 +433,8 @@ describe('zone-aware generation', () => {
         const cliffs = seg.decor.filter((d) => d.kind === 'cliff');
         expect(cliffs.length).toBeGreaterThan(0);
         for (const c of cliffs) {
-          expect(Math.abs(c.x)).toBeGreaterThanOrEqual(22);
-          expect(c.scale).toBeGreaterThanOrEqual(12);
+          expect(Math.abs(c.x)).toBeGreaterThanOrEqual(30);
+          expect(c.scale).toBeGreaterThanOrEqual(15);
           if (c.x > 0) sawPositive = true;
           if (c.x < 0) sawNegative = true;
         }

@@ -34,11 +34,15 @@ const HAY_RADIUS = 0.9;
 const HAY_LENGTH = 1.0;
 const HAY_COLOR = 0xe0b84a;
 const CRATE_SIZE = 1.2;
-const CRATE_EDGE_SIZE = 1.3;
 const CRATE_COLOR = 0xa06a2c;
 const CRATE_EDGE_COLOR = 0x6b4620;
+/** Thin frame slats (top/bottom rims) replacing the old fully-enclosing edge box, so the
+ * tan crate body stays visible between them. */
+const CRATE_FRAME_SIZE = { w: 1.3, h: 0.12, d: 1.3 };
+const CRATE_FRAME_Y_BOTTOM = 0.06;
+const CRATE_FRAME_Y_TOP = 1.14;
 const FENCE_RAIL_SIZE = { w: 3.0, h: 1.1, d: 0.15 };
-const FENCE_POST_SIZE = { w: 0.15, h: 1.3, d: 0.15 };
+const FENCE_POST_SIZE = { w: 0.15, h: 1.3, d: 0.22 };
 const FENCE_POST_X = 1.35;
 const FENCE_RAIL_Y = 0.6;
 const FENCE_COLOR = 0x8a5a2b;
@@ -63,10 +67,15 @@ const BUILDING_SIZE = { w: 7, d: 7 };
 const BUILDING_ROOF = { w: 7.2, h: 0.6, d: 7.2 };
 const STALACTITE_RADIUS = 0.6;
 const STALACTITE_HEIGHT = 2.4;
-const CLIFF_SIZE = { w: 6, d: 8 };
 const CLIFF_Y_SINK = 2;
-/** Radians of y-rotation jitter applied to cliffs, deterministic from `d.z`. */
-const CLIFF_ROTATION_RANGE = 0.6;
+/** Deterministic 10-18m cliff width, derived from `d.z`. */
+const CLIFF_WIDTH_MIN = 10;
+const CLIFF_WIDTH_RANGE = 8;
+const CLIFF_DEPTH = 14;
+/** Smaller top box stacked on the cliff to break its silhouette. */
+const CLIFF_TOP_WIDTH_SCALE = 0.6;
+const CLIFF_TOP_HEIGHT_SCALE = 0.55;
+const CLIFF_TOP_Z_OFFSET = 2;
 const CLIFF_COLORS: Record<ZoneId, number> = {
   snowfield: 0xe6eef7, forest: 0x7a5a3c, city: 0x7d8189, cave: 0x1e2438,
 };
@@ -98,13 +107,16 @@ const GOAL_ROPE_SIZE = { h: 0.15, d: 0.15 };
 const GOAL_ROPE_Y = 1.0;
 const GOAL_ROPE_COLOR = 0x3a2a1a;
 
-/** Deterministic pseudo-random y-rotation for a cliff, derived from its z so it stays stable
- * across rebuilds (the segment isn't re-generated, but a fresh Track uses a different z per
- * cliff anyway; this just avoids storing an extra random field on Decor). */
+/** Deterministic pseudo-random y-rotation for a cliff (radians, |rot| <= 0.25), derived from its
+ * z so it stays stable across rebuilds (this just avoids storing an extra random field on
+ * Decor). */
 function cliffRotation(z: number): number {
-  const s = Math.sin(z * 12.9898) * 43758.5453;
-  const frac = s - Math.floor(s);
-  return (frac - 0.5) * CLIFF_ROTATION_RANGE;
+  return ((z * 13) % 50 - 25) / 100;
+}
+
+/** Deterministic 10-18m width for a cliff, derived from its z (see cliffRotation). */
+function cliffWidth(z: number): number {
+  return CLIFF_WIDTH_MIN + ((z * 7) % CLIFF_WIDTH_RANGE);
 }
 
 interface Bundle {
@@ -144,7 +156,7 @@ export class PropManager {
   // --- Breakable obstacle geometries ---
   private readonly hayGeo = new THREE.CylinderGeometry(HAY_RADIUS, HAY_RADIUS, HAY_LENGTH, 12);
   private readonly crateGeo = new THREE.BoxGeometry(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE);
-  private readonly crateEdgeGeo = new THREE.BoxGeometry(CRATE_EDGE_SIZE, CRATE_EDGE_SIZE, CRATE_EDGE_SIZE);
+  private readonly crateFrameGeo = new THREE.BoxGeometry(CRATE_FRAME_SIZE.w, CRATE_FRAME_SIZE.h, CRATE_FRAME_SIZE.d);
   private readonly fenceRailGeo = new THREE.BoxGeometry(FENCE_RAIL_SIZE.w, FENCE_RAIL_SIZE.h, FENCE_RAIL_SIZE.d);
   private readonly fencePostGeo = new THREE.BoxGeometry(FENCE_POST_SIZE.w, FENCE_POST_SIZE.h, FENCE_POST_SIZE.d);
 
@@ -152,7 +164,7 @@ export class PropManager {
   private readonly buildingGeo = new THREE.BoxGeometry(BUILDING_SIZE.w, 1, BUILDING_SIZE.d);
   private readonly buildingRoofGeo = new THREE.BoxGeometry(BUILDING_ROOF.w, BUILDING_ROOF.h, BUILDING_ROOF.d);
   private readonly stalactiteGeo = new THREE.ConeGeometry(STALACTITE_RADIUS, STALACTITE_HEIGHT, 7);
-  private readonly cliffGeo = new THREE.BoxGeometry(CLIFF_SIZE.w, 1, CLIFF_SIZE.d);
+  private readonly cliffGeo = new THREE.BoxGeometry(1, 1, 1);
 
   // --- Gate geometries ---
   private readonly gatePostGeo = new THREE.CylinderGeometry(GATE_POST_RADIUS, GATE_POST_RADIUS, GATE_POST_HEIGHT, 8);
@@ -399,11 +411,13 @@ export class PropManager {
         hay.position.y = HAY_RADIUS;
         holder.add(hay);
       } else if (o.kind === 'crate') {
-        const edge = new THREE.Mesh(this.crateEdgeGeo, this.matCrateEdge);
-        edge.position.y = CRATE_EDGE_SIZE / 2;
         const crate = new THREE.Mesh(this.crateGeo, this.matCrate);
         crate.position.y = CRATE_SIZE / 2;
-        holder.add(edge, crate);
+        const frameBottom = new THREE.Mesh(this.crateFrameGeo, this.matCrateEdge);
+        frameBottom.position.y = CRATE_FRAME_Y_BOTTOM;
+        const frameTop = new THREE.Mesh(this.crateFrameGeo, this.matCrateEdge);
+        frameTop.position.y = CRATE_FRAME_Y_TOP;
+        holder.add(crate, frameBottom, frameTop);
       } else if (o.kind === 'fence') {
         const rail = new THREE.Mesh(this.fenceRailGeo, this.matFence);
         rail.position.y = FENCE_RAIL_Y;
@@ -523,11 +537,25 @@ export class PropManager {
       stalactite.position.set(d.x, ground + d.y, -d.z);
       group.add(stalactite);
     } else if (d.kind === 'cliff') {
-      const cliff = new THREE.Mesh(this.cliffGeo, this.matCliff.get(zone)!);
-      cliff.scale.y = d.scale;
+      const width = cliffWidth(d.z);
+      const rotY = cliffRotation(d.z);
+      const mat = this.matCliff.get(zone)!;
+
+      const cliff = new THREE.Mesh(this.cliffGeo, mat);
+      cliff.scale.set(width, d.scale, CLIFF_DEPTH);
       cliff.position.set(d.x, ground + d.scale / 2 - CLIFF_Y_SINK, -d.z);
-      cliff.rotation.y = cliffRotation(d.z);
+      cliff.rotation.y = rotY;
       group.add(cliff);
+
+      // Narrower, shorter box stacked on top and offset back to break the flat silhouette.
+      const topHeight = d.scale * CLIFF_TOP_HEIGHT_SCALE;
+      const cliffTop = new THREE.Mesh(this.cliffGeo, mat);
+      cliffTop.scale.set(width * CLIFF_TOP_WIDTH_SCALE, topHeight, CLIFF_DEPTH);
+      cliffTop.position.set(
+        d.x, ground + d.scale - CLIFF_Y_SINK + topHeight / 2, -d.z - CLIFF_TOP_Z_OFFSET,
+      );
+      cliffTop.rotation.y = rotY;
+      group.add(cliffTop);
     }
   }
 

@@ -42,8 +42,8 @@ export const TRACK_GEN = {
   /** Distant cliff decor, both banks, every zone: 3-4 per side, |x| in
    * [cliffXMin, cliffXMin+cliffXRange], height (scale) in [cliffHeightMin, cliffHeightMin+cliffHeightRange]. */
   cliffPerSideMin: 3, cliffPerSideRange: 2,
-  cliffXMin: 22, cliffXRange: 8,
-  cliffHeightMin: 12, cliffHeightRange: 13,
+  cliffXMin: 30, cliffXRange: 10,
+  cliffHeightMin: 15, cliffHeightRange: 15,
 } as const;
 
 const SLOPE_START = 0.06;

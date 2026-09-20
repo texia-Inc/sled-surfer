@@ -28,7 +28,10 @@ const SPEED_PULLBACK_RANGE = 25;
 /** Below this k, a boosting sled keeps the old, lower UP_BOOST framing instead of the
  * speed-based pull-back (a slow-speed boost - e.g. just off a pad - still reads as "low and fast"). */
 const BOOST_LOW_K = 0.3;
-const LOOK_AHEAD = 6;
+/** How far ahead (metres, world z) the look target leads the sled. */
+const LOOK_AHEAD_Z = 6;
+/** Multiplies `slopeAhead` when tilting the look target's y to pitch the camera toward the slope. */
+const LOOK_PITCH_SCALE = 8;
 const X_FOLLOW = 0.4;
 const FOV_NORMAL = 60;
 const FOV_ROCKET = 70;
@@ -55,14 +58,14 @@ function cameraUp(t: CameraTarget, k: number): number {
 }
 
 function lookTargetY(t: CameraTarget): number {
-  return t.y + 1 + t.slopeAhead * LOOK_AHEAD;
+  return t.y + 1 + t.slopeAhead * LOOK_PITCH_SCALE;
 }
 
 export function snapCamera(camera: THREE.PerspectiveCamera, t: CameraTarget): void {
   shakeEnergy = 0;
   const k = 0;
   camera.position.set(t.x * X_FOLLOW, t.y + cameraUp(t, k), -t.z + BACK + BACK_EXTRA * k);
-  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD);
+  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD_Z);
   camera.lookAt(look);
 }
 
@@ -83,7 +86,7 @@ export function updateCamera(camera: THREE.PerspectiveCamera, t: CameraTarget, d
     camera.position.y += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
   }
 
-  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD);
+  look.set(t.x * X_FOLLOW, lookTargetY(t), -t.z - LOOK_AHEAD_Z);
   camera.lookAt(look);
   const fov = t.boosting ? FOV_BOOST : t.rocketing ? FOV_ROCKET : FOV_NORMAL;
   camera.fov += (fov - camera.fov) * Math.min(1, dt * 5);

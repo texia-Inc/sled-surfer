@@ -4,8 +4,8 @@ import { SEGMENT_LENGTH, TRACK_WIDTH } from '../core/track';
 import { zoneAt } from '../core/zones';
 import { blendedThemeColor } from './zoneTheme';
 
-const SIDE_MARGIN = 16;
-const WIDTH_SEGMENTS = 40;
+const SIDE_MARGIN = 28;
+const WIDTH_SEGMENTS = 56;
 const LENGTH_SEGMENTS = 200;
 const BEHIND = 1;
 const AHEAD = 3;
