@@ -146,7 +146,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   }
 
   s.x += s.vx * dt;
-  const half = p.trackWidth / 2 - p.sledRadius;
+  const half = track.widthAt(s.z) / 2 - p.sledRadius;
   if (s.x > half) {
     s.x = half;
     s.vx = -Math.abs(s.vx) * p.wallBounceDamping;

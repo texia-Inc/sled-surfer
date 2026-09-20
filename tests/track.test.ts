@@ -53,7 +53,7 @@ describe('createTrack', () => {
       const s = t.getSegment(i);
       for (const o of s.obstacles) {
         expect(Math.abs(o.x - s.corridorX)).toBeGreaterThanOrEqual(CORRIDOR_HALF);
-        expect(Math.abs(o.x)).toBeLessThanOrEqual(TRACK_WIDTH / 2 - 1);
+        expect(Math.abs(o.x)).toBeLessThanOrEqual(t.widthAt(o.z) / 2 - 1 + 1e-9);
         expect(o.z).toBeGreaterThanOrEqual(s.z0);
         expect(o.z).toBeLessThan(s.z1);
       }
@@ -262,13 +262,24 @@ describe('createTrack', () => {
     expect(s.coins.length).toBeGreaterThanOrEqual(10);
   });
 
-  it('keeps ground coins within TRACK_WIDTH/2 - coinXMargin of the centerline', () => {
+  it('keeps ground coin lines within widthAt(startZ)/2 - coinXMargin of the centerline', () => {
+    // x is drawn once per line from widthAt(startZ) (the first coin's z), not re-evaluated per
+    // coin, so the bound is checked at that same startZ (matching generateSegment's own logic) -
+    // not at each individual coin's z, which can drift a few metres along the line.
     for (let seed = 1; seed <= 8; seed++) {
       const t = createTrack(seed);
       for (let i = 0; i < 10; i++) {
+        const lines = new Map<string, { x: number; startZ: number }>();
         for (const c of t.getSegment(i).coins) {
-          if (c.lift > 0) continue; // arch coins are anchored to a ramp, not this bound
-          expect(Math.abs(c.x)).toBeLessThanOrEqual(TRACK_WIDTH / 2 - TRACK_GEN.coinXMargin + 1e-9);
+          // Only plain coin-line coins respect coinXMargin; arch coins (lift>0) and guide coins
+          // (id `-g...`) are anchored to a ramp's own x/width instead.
+          const m = /^\d+-l(\d+)-\d+$/.exec(c.id);
+          if (c.lift > 0 || !m) continue;
+          const existing = lines.get(m[1]);
+          if (!existing || c.z < existing.startZ) lines.set(m[1], { x: c.x, startZ: c.z });
+        }
+        for (const { x, startZ } of lines.values()) {
+          expect(Math.abs(x)).toBeLessThanOrEqual(t.widthAt(startZ) / 2 - TRACK_GEN.coinXMargin + 1e-9);
         }
       }
     }
@@ -290,15 +301,16 @@ describe('createTrack', () => {
     expect(sawNearRightEdge).toBe(true);
   });
 
-  it('places boost pads inside the track width and never before boostFirstZ', () => {
+  it('places boost pads inside the track width (at their own z) and never before boostFirstZ', () => {
     for (let seed = 1; seed <= 5; seed++) {
       const t = createTrack(seed);
       for (let i = 0; i < 20; i++) {
         const s = t.getSegment(i);
         for (const b of s.boosts) {
           expect(b.z).toBeGreaterThanOrEqual(TRACK_GEN.boostFirstZ);
-          expect(b.x - b.width / 2).toBeGreaterThanOrEqual(-TRACK_WIDTH / 2);
-          expect(b.x + b.width / 2).toBeLessThanOrEqual(TRACK_WIDTH / 2);
+          const w = t.widthAt(b.z);
+          expect(b.x - b.width / 2).toBeGreaterThanOrEqual(-w / 2 - 1e-9);
+          expect(b.x + b.width / 2).toBeLessThanOrEqual(w / 2 + 1e-9);
         }
       }
     }
@@ -374,8 +386,9 @@ describe('createTrack', () => {
       for (let i = 0; i <= 20; i++) {
         const s = t.getSegment(i);
         for (const r of s.ramps) {
-          expect(r.x - r.width / 2).toBeGreaterThanOrEqual(-TRACK_WIDTH / 2);
-          expect(r.x + r.width / 2).toBeLessThanOrEqual(TRACK_WIDTH / 2);
+          const w = t.widthAt(r.z);
+          expect(r.x - r.width / 2).toBeGreaterThanOrEqual(-w / 2 - 1e-9);
+          expect(r.x + r.width / 2).toBeLessThanOrEqual(w / 2 + 1e-9);
           const matchesSmall = r.width === TRACK_GEN.rampWidth;
           const matchesBig = r.width === TRACK_GEN.rampBigWidth;
           expect(matchesSmall || matchesBig).toBe(true);
@@ -418,6 +431,29 @@ describe('createTrack', () => {
       }
     }
     expect(found).toBe(true);
+  });
+
+  it('widthAt stays within [widthMin, widthMax] and is continuous across segment boundaries', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const t = createTrack(seed);
+      for (let z = 0; z < 15 * SEGMENT_LENGTH; z += 17) {
+        const w = t.widthAt(z);
+        expect(w).toBeGreaterThanOrEqual(TRACK_GEN.widthMin - 1e-9);
+        expect(w).toBeLessThanOrEqual(TRACK_GEN.widthMax + 1e-9);
+      }
+      for (let i = 1; i <= 14; i++) {
+        const z = i * SEGMENT_LENGTH;
+        expect(Math.abs(t.widthAt(z - 0.01) - t.widthAt(z + 0.01))).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it('segment 0 starts at TRACK_WIDTH and each segment\'s widthStart matches the previous widthEnd', () => {
+    const t = createTrack(6);
+    expect(t.getSegment(0).widthStart).toBe(TRACK_WIDTH);
+    for (let i = 1; i <= 10; i++) {
+      expect(t.getSegment(i).widthStart).toBe(t.getSegment(i - 1).widthEnd);
+    }
   });
 
   it('isOnPad is true inside the pad and false just outside on each axis', () => {

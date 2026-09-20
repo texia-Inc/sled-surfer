@@ -12,6 +12,9 @@ export interface PhysicsParams {
   rocketDuration: number;
   maxLateral: number;
   lateralRefSpeed: number;
+  /** Nominal track width (m): segment 0's widthStart, and the default a fake TrackQuery's
+   * widthAt returns in tests unless it overrides one. The wall clamp itself now reads the real,
+   * per-z width from track.widthAt(z) (terrain §4), not this field. */
   trackWidth: number;
   sledRadius: number;
   spawnGroundOffset: number;

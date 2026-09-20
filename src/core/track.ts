@@ -48,6 +48,9 @@ export const TRACK_GEN = {
   cliffPerSideMin: 3, cliffPerSideRange: 2,
   cliffXMin: 30, cliffXRange: 10,
   cliffHeightMin: 15, cliffHeightRange: 15,
+  /** Track width (m) varies per segment: widthEnd is uniform in [widthMin, widthMax]; a
+   * segment's widthStart is the previous segment's widthEnd (segment 0 starts at TRACK_WIDTH). */
+  widthMin: 20, widthMax: 36,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -77,6 +80,26 @@ export function mulberry32(seed: number): () => number {
 
 function hashSeed(seed: number, index: number): number {
   return (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) + Math.imul(index + 1, 0xc2b2ae35)) >>> 0;
+}
+
+/** Segment `index`'s widthEnd, drawn from its own salted rng stream (independent of the shared
+ * `rng` and of any other segment) so it can be looked up for segment `index` (as its own end)
+ * and for segment `index + 1` (as that segment's widthStart) without generating full segments. */
+function widthEndFor(seed: number, index: number): number {
+  const widthRng = mulberry32(hashSeed(seed, index) ^ 0x51ed270b);
+  return TRACK_GEN.widthMin + widthRng() * (TRACK_GEN.widthMax - TRACK_GEN.widthMin);
+}
+
+function smoothstep(t: number): number {
+  const c = Math.max(0, Math.min(1, t));
+  return c * c * (3 - 2 * c);
+}
+
+/** Track width at `z`, smoothstep-interpolated between a segment's widthStart/widthEnd. Shared
+ * by generateSegment (which needs it live, before the segment object exists) and createTrack's
+ * public widthAt (which reads it back off the cached Segment). */
+function widthAtInSegment(z0: number, z1: number, widthStart: number, widthEnd: number, z: number): number {
+  return widthStart + (widthEnd - widthStart) * smoothstep((z - z0) / (z1 - z0));
 }
 
 export function baseSlope(z: number): number {
@@ -135,6 +158,14 @@ function generateSegment(seed: number, index: number): Segment {
   const z1 = z0 + SEGMENT_LENGTH;
   const zone = zoneAt(z0);
 
+  // Width varies per segment (terrain §4): widthEnd comes from its own salted rng stream (so it
+  // never touches the shared `rng` order), computed up front so every x-range drawn below can
+  // call widthAt(z) live. widthStart is simply the previous segment's widthEnd, looked up the
+  // same way (no need to generate segment index-1 itself).
+  const widthStart = index === 0 ? TRACK_WIDTH : widthEndFor(seed, index - 1);
+  const widthEnd = widthEndFor(seed, index);
+  const widthAt = (z: number): number => widthAtInSegment(z0, z1, widthStart, widthEnd, z);
+
   const bumps: Bump[] = [];
   const bumpCount = TRACK_GEN.bumpCountMin + Math.floor(rng() * TRACK_GEN.bumpCountRange);
   // Early bumps are gentler so a fresh launch doesn't stall climbing them; scale ramps up to
@@ -163,9 +194,10 @@ function generateSegment(seed: number, index: number): Segment {
   // this feature - only the accepted ramps consume a draw, keeping generation deterministic and
   // pre-existing draws byte-for-byte unchanged.
   const rampXRng = mulberry32(hashSeed(seed, index) ^ 0x1b873593);
-  const rampX = (width: number): number => {
-    const lo = -TRACK_WIDTH / 2 + width / 2 + 1;
-    const hi = TRACK_WIDTH / 2 - width / 2 - 1;
+  const rampX = (width: number, z: number): number => {
+    const w = widthAt(z);
+    const lo = -w / 2 + width / 2 + 1;
+    const hi = w / 2 - width / 2 - 1;
     return lo + rampXRng() * (hi - lo);
   };
 
@@ -194,7 +226,7 @@ function generateSegment(seed: number, index: number): Segment {
     const width = big ? TRACK_GEN.rampBigWidth : TRACK_GEN.rampWidth;
     ramps.push({
       id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height,
-      x: rampX(width), width,
+      x: rampX(width, rz), width,
     });
   }
 
@@ -211,8 +243,6 @@ function generateSegment(seed: number, index: number): Segment {
   const boosts: BoostPad[] = [];
   const boostLength = TRACK_GEN.boostLength;
   const boostWidth = TRACK_GEN.boostWidth;
-  const padXMin = -TRACK_WIDTH / 2 + boostWidth / 2 + 1;
-  const padXMax = TRACK_WIDTH / 2 - boostWidth / 2 - 1;
   const overlapsRamp = (z: number): boolean => ramps.some(
     (r) => z < r.z + r.length + TRACK_GEN.boostMinGapFromRamp && z + boostLength > r.z - TRACK_GEN.boostMinGapFromRamp,
   );
@@ -225,7 +255,10 @@ function generateSegment(seed: number, index: number): Segment {
     if (overlapsRamp(z)) return;
     if (overlapsDrop(z)) return;
     if (boosts.some((b) => z < b.z + b.length && z + boostLength > b.z)) return;
-    const x = padXMin + padRng() * (padXMax - padXMin);
+    const w = widthAt(z);
+    const xMin = -w / 2 + boostWidth / 2 + 1;
+    const xMax = w / 2 - boostWidth / 2 - 1;
+    const x = xMin + padRng() * (xMax - xMin);
     boosts.push({ id: `${index}-b${k}`, x, z, length: boostLength, width: boostWidth });
   };
   const iceMargin = TRACK_GEN.boostIceBandMargin;
@@ -256,11 +289,11 @@ function generateSegment(seed: number, index: number): Segment {
   );
   const zMin = Math.max(z0 + 10, FIRST_OBSTACLE_Z);
   const zMax = z1 - 5;
-  const halfX = TRACK_WIDTH / 2 - OBSTACLE_MARGIN_X;
   const obstacleAttempts = count * TRACK_GEN.obstacleAttemptsPerSlot;
   for (let attempt = 0; attempt < obstacleAttempts && obstacles.length < count; attempt++) {
-    const x = (rng() * 2 - 1) * halfX;
     const z = zMin + rng() * (zMax - zMin);
+    const halfX = widthAt(z) / 2 - OBSTACLE_MARGIN_X;
+    const x = (rng() * 2 - 1) * halfX;
     const kind = zone.obstacleKinds[Math.floor(rng() * zone.obstacleKinds.length)];
     if (Math.abs(x - corridorX) < CORRIDOR_HALF) continue;
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
@@ -279,8 +312,8 @@ function generateSegment(seed: number, index: number): Segment {
   const coins: Coin[] = [];
   for (let line = 0; line < TRACK_GEN.coinLines; line++) {
     const n = TRACK_GEN.coinsPerLineMin + Math.floor(rng() * TRACK_GEN.coinsPerLineRange);
-    const x = (rng() * 2 - 1) * (TRACK_WIDTH / 2 - TRACK_GEN.coinXMargin);
     const startZ = z0 + TRACK_GEN.coinLineStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.coinLineStartMargin - TRACK_GEN.coinLineEndMargin);
+    const x = (rng() * 2 - 1) * (widthAt(startZ) / 2 - TRACK_GEN.coinXMargin);
     for (let k = 0; k < n; k++) {
       const z = startZ + k * TRACK_GEN.coinSpacing;
       if (inDropSpan(z)) continue;
@@ -363,7 +396,10 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  return { index, z0, z1, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops, zone: zone.id, gate, decor };
+  return {
+    index, z0, z1, widthStart, widthEnd, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
+    zone: zone.id, gate, decor,
+  };
 }
 
 export function isOnPad(x: number, z: number, pad: BoostPad): boolean {
@@ -435,6 +471,12 @@ export function createTrack(seed: number): Track {
     return seg.ice.some((b) => z >= b.z0 && z < b.z1) ? 'ice' : zoneAt(z).surface;
   };
 
+  const widthAt = (z: number): number => {
+    if (z < 0) return TRACK_WIDTH;
+    const seg = getSegment(segmentIndexAt(z));
+    return widthAtInSegment(seg.z0, seg.z1, seg.widthStart, seg.widthEnd, z);
+  };
+
   const segmentsAround = (z: number): Segment[] => {
     const a = segmentIndexAt(z - 10);
     const b = segmentIndexAt(z + 10);
@@ -443,5 +485,5 @@ export function createTrack(seed: number): Track {
     return out;
   };
 
-  return { seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround };
+  return { seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt };
 }

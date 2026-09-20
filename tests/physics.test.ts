@@ -10,18 +10,24 @@ const DT = 1 / 120;
 
 function emptySegment(index: number): Segment {
   return {
-    index, z0: index * 200, z1: index * 200 + 200, corridorX: 0, bumps: [], ice: [], ramps: [],
+    index, z0: index * 200, z1: index * 200 + 200, widthStart: DEFAULT_PHYSICS.trackWidth, widthEnd: DEFAULT_PHYSICS.trackWidth,
+    corridorX: 0, bumps: [], ice: [], ramps: [],
     obstacles: [], coins: [], boosts: [], drops: [], zone: 'snowfield', gate: null, decor: [],
   };
 }
 
-/** 高さ関数から TrackQuery を作る。傾きは physics と同じ後退差分 */
-function fakeTrack(height: (z: number) => number, surface: Surface = 'snow', seg: Segment = emptySegment(0)): TrackQuery {
+/** 高さ関数から TrackQuery を作る。傾きは physics と同じ後退差分。width は既定で
+ * DEFAULT_PHYSICS.trackWidth を返す (既存テストの壁クランプ挙動を変えない)。 */
+function fakeTrack(
+  height: (z: number) => number, surface: Surface = 'snow', seg: Segment = emptySegment(0),
+  width: number = DEFAULT_PHYSICS.trackWidth,
+): TrackQuery {
   return {
     heightAt: height,
     slopeAt: (z) => Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, (height(z) - height(z - SLOPE_STEP)) / SLOPE_STEP)),
     surfaceAt: () => surface,
     segmentsAround: () => [seg],
+    widthAt: () => width,
   };
 }
 
@@ -423,6 +429,18 @@ describe('ramps boost like pads (flow addendum)', () => {
     }
     expect(count).toBe(2);
     expect(s.boostChain).toBe(2);
+  });
+});
+
+describe('variable track width (terrain §4)', () => {
+  it('the wall clamp respects a narrower fake widthAt instead of the nominal trackWidth', () => {
+    const narrow = fakeTrack(() => 0, 'snow', emptySegment(0), 20);
+    // Placed already past the narrow half-width (but well inside the nominal 28 m width) with no
+    // lateral velocity (steer 0), so the only thing that can move x is the wall clamp itself.
+    const s = grounded({ vz: 15, vx: 0, x: 12 });
+    stepRun(s, { steer: 0, rocket: false }, DT, narrow, DEFAULT_PHYSICS);
+    expect(s.x).toBeCloseTo(20 / 2 - DEFAULT_PHYSICS.sledRadius, 5);
+    expect(s.x).toBeLessThan(DEFAULT_PHYSICS.trackWidth / 2 - DEFAULT_PHYSICS.sledRadius);
   });
 });
 

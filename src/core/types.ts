@@ -28,6 +28,8 @@ export interface Segment {
   index: number;
   z0: number;
   z1: number;
+  widthStart: number;
+  widthEnd: number;
   corridorX: number;
   bumps: Bump[];
   ice: IceBand[];
@@ -47,6 +49,7 @@ export interface TrackQuery {
   slopeAt(z: number, x?: number): number;
   surfaceAt(z: number): Surface;
   segmentsAround(z: number): Segment[];
+  widthAt(z: number): number;
 }
 
 export interface Track extends TrackQuery {
