@@ -30,6 +30,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .panel { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,30,60,.55); pointer-events: auto; }
 .panel .card { width: min(92vw, 420px); background: #fff; border-radius: 16px; padding: 20px; color: #123; }
 .panel h2 { margin: 0 0 8px; font-size: 22px; }
+.panel h2.goal { font-size: 30px; color: #d4a017; }
 .panel .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
 .panel .row.total { font-weight: 700; font-size: 18px; border-top: 1px solid #dde; margin-top: 6px; padding-top: 8px; }
 .panel .badge { color: #e0452b; font-weight: 700; }

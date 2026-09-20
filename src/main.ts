@@ -94,6 +94,7 @@ function boot(): void {
       game.restart();
       terrain.setTrack(game.track);
       props.setTrack(game.track);
+      props.setGoal(game.profile.goalDistance);
       snapCamera(camera, {
         x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
         speed: 0, slopeAhead: 0, inDrop: false,
@@ -101,6 +102,7 @@ function boot(): void {
     },
   });
 
+  props.setGoal(game.profile.goalDistance);
   snapCamera(camera, {
     x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
     speed: 0, slopeAhead: 0, inDrop: false,
@@ -148,6 +150,9 @@ function boot(): void {
 
     if (game.phase === 'results' && lastPhase !== 'results' && game.lastResult) {
       results.show(game.lastResult, game.profile);
+      // The goal may have advanced (applyResult already ran inside game.update); move the
+      // finish gate now so it's positioned correctly before the next restart() builds a track.
+      props.setGoal(game.profile.goalDistance);
     }
     lastPhase = game.phase;
 

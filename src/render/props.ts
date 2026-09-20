@@ -83,6 +83,21 @@ const GATE_NAME_H = 96;
 const GATE_NAME_PLANE_H = 1.1;
 const GATE_NAME_Z_OFFSET = 0.2;
 
+// --- Finish gate (goal line) constants ---
+const GOAL_POST_RADIUS = 0.3;
+const GOAL_POST_HEIGHT = 6;
+const GOAL_POST_X_OFFSET = 0.5;
+const GOAL_POST_COLOR = 0xffd23f;
+const GOAL_BANNER_W_EXTRA = 1;
+const GOAL_BANNER_H = 1.2;
+const GOAL_BANNER_Y = 6;
+const GOAL_BANNER_TEX_W = 512;
+const GOAL_BANNER_TEX_H = 64;
+const GOAL_BANNER_CHECKER_COLS = 8;
+const GOAL_ROPE_SIZE = { h: 0.15, d: 0.15 };
+const GOAL_ROPE_Y = 1.0;
+const GOAL_ROPE_COLOR = 0x3a2a1a;
+
 /** Deterministic pseudo-random y-rotation for a cliff, derived from its z so it stays stable
  * across rebuilds (the segment isn't re-generated, but a fresh Track uses a different z per
  * cliff anyway; this just avoids storing an extra random field on Decor). */
@@ -101,6 +116,8 @@ interface Bundle {
 export class PropManager {
   private bundles = new Map<number, Bundle>();
   private track: Track;
+  private goalGroup: THREE.Group | null = null;
+  private goalDistanceVal: number | null = null;
 
   private readonly treeTop = new THREE.ConeGeometry(0.9, 2.4, 7);
   private readonly treeTrunk = new THREE.CylinderGeometry(0.2, 0.25, 0.8, 6);
@@ -141,6 +158,11 @@ export class PropManager {
   private readonly gatePostGeo = new THREE.CylinderGeometry(GATE_POST_RADIUS, GATE_POST_RADIUS, GATE_POST_HEIGHT, 8);
   private readonly gateBannerGeo = new THREE.BoxGeometry(TRACK_WIDTH + 1, GATE_BANNER_HEIGHT, GATE_BANNER_DEPTH);
   private readonly gateNameGeo = new THREE.PlaneGeometry(TRACK_WIDTH, GATE_NAME_PLANE_H);
+
+  // --- Finish gate geometries ---
+  private readonly goalPostGeo = new THREE.CylinderGeometry(GOAL_POST_RADIUS, GOAL_POST_RADIUS, GOAL_POST_HEIGHT, 8);
+  private readonly goalBannerGeo = new THREE.PlaneGeometry(TRACK_WIDTH + GOAL_BANNER_W_EXTRA, GOAL_BANNER_H);
+  private readonly goalRopeGeo = new THREE.BoxGeometry(TRACK_WIDTH + GOAL_BANNER_W_EXTRA, GOAL_ROPE_SIZE.h, GOAL_ROPE_SIZE.d);
 
   private readonly matTree = new THREE.MeshLambertMaterial({ color: 0x2f8f4e, flatShading: true });
   private readonly matTrunk = new THREE.MeshLambertMaterial({ color: 0x7a4b2a, flatShading: true });
@@ -199,6 +221,13 @@ export class PropManager {
   );
   private readonly gateNameMaterials = new Map<ZoneId, THREE.MeshBasicMaterial>();
 
+  // --- Finish gate materials ---
+  private readonly matGoalPost = new THREE.MeshLambertMaterial({ color: GOAL_POST_COLOR, flatShading: true });
+  private readonly matGoalBanner = new THREE.MeshBasicMaterial({
+    map: this.createGoalBannerTexture(), side: THREE.DoubleSide,
+  });
+  private readonly matGoalRope = new THREE.MeshLambertMaterial({ color: GOAL_ROPE_COLOR, flatShading: true });
+
   constructor(private readonly scene: THREE.Scene, track: Track, private readonly params: PhysicsParams) {
     this.track = track;
     this.coin.rotateX(Math.PI / 2);
@@ -244,9 +273,35 @@ export class PropManager {
     return t;
   }
 
+  private createGoalBannerTexture(): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = GOAL_BANNER_TEX_W;
+    c.height = GOAL_BANNER_TEX_H;
+    const ctx = c.getContext('2d')!;
+    const cellW = GOAL_BANNER_TEX_W / GOAL_BANNER_CHECKER_COLS;
+    for (let i = 0; i < GOAL_BANNER_CHECKER_COLS; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#000000' : '#ffffff';
+      ctx.fillRect(i * cellW, 0, cellW, GOAL_BANNER_TEX_H);
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
   setTrack(track: Track): void {
     this.dispose();
     this.track = track;
+    if (this.goalGroup && this.goalDistanceVal !== null) {
+      this.goalGroup.position.set(0, this.track.heightAt(this.goalDistanceVal), -this.goalDistanceVal);
+    }
+  }
+
+  /** Creates (once) or repositions the single finish gate at `goalDistance`. */
+  setGoal(goalDistance: number): void {
+    this.goalDistanceVal = goalDistance;
+    if (!this.goalGroup) {
+      this.goalGroup = this.buildGoalGate();
+      this.scene.add(this.goalGroup);
+    }
+    this.goalGroup.position.set(0, this.track.heightAt(goalDistance), -goalDistance);
   }
 
   update(z: number, collected: ReadonlySet<string>, dt: number, brokenIds: ReadonlySet<string>): void {
@@ -513,5 +568,25 @@ export class PropManager {
     const name = new THREE.Mesh(this.gateNameGeo, this.getGateNameMaterial(gate.zone));
     name.position.set(0, ground + GATE_BANNER_Y, -gate.z + GATE_NAME_Z_OFFSET);
     group.add(name);
+  }
+
+  /** Two posts, a checkered banner facing +world z, and a low rope-like bar underneath.
+   * Positioned by setGoal(), not part of any segment bundle (survives segment recycling). */
+  private buildGoalGate(): THREE.Group {
+    const group = new THREE.Group();
+    const postX = TRACK_WIDTH / 2 + GOAL_POST_X_OFFSET;
+    for (const side of [1, -1]) {
+      const post = new THREE.Mesh(this.goalPostGeo, this.matGoalPost);
+      post.position.set(side * postX, GOAL_POST_HEIGHT / 2, 0);
+      group.add(post);
+    }
+    const banner = new THREE.Mesh(this.goalBannerGeo, this.matGoalBanner);
+    banner.position.set(0, GOAL_BANNER_Y, 0);
+    group.add(banner);
+
+    const rope = new THREE.Mesh(this.goalRopeGeo, this.matGoalRope);
+    rope.position.set(0, GOAL_ROPE_Y, 0);
+    group.add(rope);
+    return group;
   }
 }

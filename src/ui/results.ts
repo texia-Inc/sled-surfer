@@ -8,6 +8,7 @@ const KINDS: UpgradeKind[] = ['slingshot', 'sled', 'income'];
 export class ResultsPanel {
   visible = false;
   private readonly root: HTMLElement;
+  private readonly heading: HTMLElement;
   private readonly summary: HTMLElement;
   private readonly buttons = new Map<UpgradeKind, HTMLButtonElement>();
   private readonly coinsLine: HTMLElement;
@@ -25,6 +26,7 @@ export class ResultsPanel {
       </div>
     `;
     parent.appendChild(this.root);
+    this.heading = this.root.querySelector<HTMLElement>('h2')!;
     this.summary = this.root.querySelector<HTMLElement>('.summary')!;
     this.coinsLine = this.root.querySelector<HTMLElement>('.wallet')!;
     const shop = this.root.querySelector('.shop')!;
@@ -39,6 +41,8 @@ export class ResultsPanel {
   }
 
   show(result: RunResult, profile: Profile): void {
+    this.heading.textContent = result.finished ? 'GOAL!' : 'RESULT';
+    this.heading.classList.toggle('goal', result.finished);
     const zoneReachedName = ZONES.find((z) => z.id === result.zoneReached)!.nameJa;
     const nextGoalZoneName = zoneAt(profile.goalDistance).nameJa;
     this.summary.innerHTML = `
