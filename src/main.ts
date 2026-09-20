@@ -25,6 +25,11 @@ const SHAKE_STUN = 1.0;
 const SHAKE_BREAK = 0.35;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 const FOG_LERP_RATE = 2;
+/** How far ahead (m) the camera looks for slope, to tilt the look target before a descent. */
+const CAMERA_SLOPE_AHEAD_DIST = 8;
+/** How far before/after a Drop's span the camera treats the sled as "in the drop". */
+const CAMERA_DROP_LOOK_BEFORE = 20;
+const CAMERA_DROP_LOOK_AFTER = 10;
 
 function getStorage(): StorageLike | null {
   try {
@@ -89,11 +94,17 @@ function boot(): void {
       game.restart();
       terrain.setTrack(game.track);
       props.setTrack(game.track);
-      snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0 });
+      snapCamera(camera, {
+        x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
+        speed: 0, slopeAhead: 0, inDrop: false,
+      });
     },
   });
 
-  snapCamera(camera, { x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0 });
+  snapCamera(camera, {
+    x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
+    speed: 0, slopeAhead: 0, inDrop: false,
+  });
 
   let last = performance.now();
   let acc = 0;
@@ -173,6 +184,13 @@ function boot(): void {
     fog.near += (fogTarget.fogNear - fog.near) * fogK;
     fog.far += (fogTarget.fogFar - fog.far) * fogK;
 
+    const slopeAhead = run
+      ? Math.max(-1, Math.min(1, game.track.slopeAt(z + CAMERA_SLOPE_AHEAD_DIST)))
+      : 0;
+    const inDrop = !!run && game.track.segmentsAround(z).some((seg) => seg.drops.some(
+      (d) => z >= d.z - CAMERA_DROP_LOOK_BEFORE && z <= d.z + d.length + CAMERA_DROP_LOOK_AFTER,
+    ));
+
     terrain.update(z);
     props.update(z, run ? run.collectedCoinIds : EMPTY_COINS, frameDt, run ? run.brokenObstacleIds : EMPTY_COINS);
     player.update({
@@ -195,7 +213,7 @@ function boot(): void {
       breakCount: run ? run.breakCount : 0,
       dt: frameDt,
     });
-    updateCamera(camera, { x, y, z, rocketing, boosting, shake }, frameDt);
+    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop }, frameDt);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
