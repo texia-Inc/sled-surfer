@@ -261,6 +261,34 @@ describe('createTrack', () => {
     expect(s.coins.length).toBeGreaterThanOrEqual(10);
   });
 
+  it('keeps ground coins within TRACK_WIDTH/2 - coinXMargin of the centerline', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 10; i++) {
+        for (const c of t.getSegment(i).coins) {
+          if (c.lift > 0) continue; // arch coins are anchored to a ramp, not this bound
+          expect(Math.abs(c.x)).toBeLessThanOrEqual(TRACK_WIDTH / 2 - TRACK_GEN.coinXMargin + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('draws corridorX uniformly across the full track width (not a narrow band)', () => {
+    let sawNearLeftEdge = false;
+    let sawNearRightEdge = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 5; i++) {
+        const cx = t.getSegment(i).corridorX;
+        expect(Math.abs(cx)).toBeLessThanOrEqual(TRACK_WIDTH / 2 + 1e-9);
+        if (cx < -TRACK_WIDTH / 2 + 3) sawNearLeftEdge = true;
+        if (cx > TRACK_WIDTH / 2 - 3) sawNearRightEdge = true;
+      }
+    }
+    expect(sawNearLeftEdge).toBe(true);
+    expect(sawNearRightEdge).toBe(true);
+  });
+
   it('places boost pads inside the track width and never before boostFirstZ', () => {
     for (let seed = 1; seed <= 5; seed++) {
       const t = createTrack(seed);
@@ -365,26 +393,55 @@ describe('zone-aware generation', () => {
     }
   });
 
-  it('a forest segment places pine decor at least decorBankMin from the centerline', () => {
+  it('a forest segment places pine decor at least decorBankMin from the centerline (plus cliffs, every zone)', () => {
     const t = createTrack(3);
     const seg = t.getSegment(3);
     expect(seg.z0).toBe(600);
     expect(seg.decor.length).toBeGreaterThan(0);
-    for (const d of seg.decor) {
-      expect(d.kind).toBe('pine');
+    const pines = seg.decor.filter((d) => d.kind === 'pine');
+    expect(pines.length).toBeGreaterThan(0);
+    for (const d of pines) {
       expect(Math.abs(d.x)).toBeGreaterThanOrEqual(TRACK_GEN.decorBankMin);
+    }
+    for (const d of seg.decor) {
+      expect(d.kind === 'pine' || d.kind === 'cliff').toBe(true);
     }
   });
 
-  it('a cave segment places only stalactite decor above stalactiteYMin', () => {
+  it('a cave segment places stalactite decor above stalactiteYMin (plus cliffs, every zone)', () => {
     const t = createTrack(3);
     const seg = t.getSegment(10);
     expect(seg.z0).toBe(2000);
     expect(seg.decor.length).toBeGreaterThan(0);
-    for (const d of seg.decor) {
-      expect(d.kind).toBe('stalactite');
+    const stalactites = seg.decor.filter((d) => d.kind === 'stalactite');
+    expect(stalactites.length).toBeGreaterThan(0);
+    for (const d of stalactites) {
       expect(d.y).toBeGreaterThanOrEqual(TRACK_GEN.stalactiteYMin);
     }
+    for (const d of seg.decor) {
+      expect(d.kind === 'stalactite' || d.kind === 'cliff').toBe(true);
+    }
+  });
+
+  it('cliff decor appears on both banks of every zone, far out and tall', () => {
+    let sawPositive = false;
+    let sawNegative = false;
+    for (let seed = 1; seed <= 6; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i <= 12; i++) {
+        const seg = t.getSegment(i);
+        const cliffs = seg.decor.filter((d) => d.kind === 'cliff');
+        expect(cliffs.length).toBeGreaterThan(0);
+        for (const c of cliffs) {
+          expect(Math.abs(c.x)).toBeGreaterThanOrEqual(22);
+          expect(c.scale).toBeGreaterThanOrEqual(12);
+          if (c.x > 0) sawPositive = true;
+          if (c.x < 0) sawNegative = true;
+        }
+      }
+    }
+    expect(sawPositive).toBe(true);
+    expect(sawNegative).toBe(true);
   });
 
   it('gates exist exactly at the forest/city/cave boundary segments', () => {

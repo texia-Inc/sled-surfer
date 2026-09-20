@@ -28,18 +28,22 @@ export const TRACK_GEN = {
   dropChance: 0.35,
   dropDepthMin: 10, dropDepthRange: 5, dropLength: 20,
   dropStartMargin: 40, dropEndMargin: 60,
-  corridorRange: 8,
-  coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXRange: 6, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
+  coinLines: 2, coinsPerLineMin: 5, coinsPerLineRange: 4, coinXMargin: 2, coinSpacing: 1.5, coinLineStartMargin: 5, coinLineEndMargin: 20,
   archCoins: 7, archStartOffset: 4, archSpacing: 2.5, archLiftBase: 2, archLiftAmp: 4,
   obstacleBase: 3, obstaclePerMeters: 400, obstacleMax: 14, obstacleAttemptsPerSlot: 10,
   rampExclusionBefore: 3, rampExclusionAfter: 6,
   boostChance: 0.8, boostSecondChance: 0.5, boostLength: 6, boostWidth: 5,
   boostFirstZ: 60, boostMinGapFromRamp: 4,
   boostIceBandMargin: 3, boostRampPreOffsetMul: 2, boostZoneMargin: 20,
-  decorBankMin: 9, decorBankMax: 13, pineMin: 12, pineRange: 8,
+  decorBankMin: 16, decorBankMax: 22, pineMin: 12, pineRange: 8,
   buildingMin: 4, buildingRange: 2, buildingHeightMin: 8, buildingHeightRange: 17,
   stalactiteMin: 6, stalactiteRange: 4, stalactiteYMin: 7, stalactiteYRange: 2,
   decorScaleMin: 0.7, decorScaleRange: 0.9,
+  /** Distant cliff decor, both banks, every zone: 3-4 per side, |x| in
+   * [cliffXMin, cliffXMin+cliffXRange], height (scale) in [cliffHeightMin, cliffHeightMin+cliffHeightRange]. */
+  cliffPerSideMin: 3, cliffPerSideRange: 2,
+  cliffXMin: 22, cliffXRange: 8,
+  cliffHeightMin: 12, cliffHeightRange: 13,
 } as const;
 
 const SLOPE_START = 0.06;
@@ -52,8 +56,9 @@ const OBSTACLE_MARGIN_X = 1;
 const FIRST_OBSTACLE_Z = 40;
 /** City buildings sit decorBankMin + this many metres from the centerline. */
 const BUILDING_X_OFFSET = 3;
-/** Fraction of the even z-spacing step that a building's position may jitter by. */
-const BUILDING_JITTER_FRAC = 0.3;
+/** Fraction of the even z-spacing step that an evenly-stepped decor row (buildings, cliffs) may
+ * jitter its position by. */
+const EVEN_SPACING_JITTER_FRAC = 0.3;
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -218,7 +223,8 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
-  const corridorX = (rng() - 0.5) * TRACK_GEN.corridorRange;
+  // Uniform across the full width (not a narrow band): (rng()-0.5) in [-0.5,0.5] * TRACK_WIDTH.
+  const corridorX = (rng() - 0.5) * TRACK_WIDTH;
   const obstacles: Obstacle[] = [];
   const count = Math.min(
     TRACK_GEN.obstacleMax,
@@ -249,7 +255,7 @@ function generateSegment(seed: number, index: number): Segment {
   const coins: Coin[] = [];
   for (let line = 0; line < TRACK_GEN.coinLines; line++) {
     const n = TRACK_GEN.coinsPerLineMin + Math.floor(rng() * TRACK_GEN.coinsPerLineRange);
-    const x = (rng() * 2 - 1) * TRACK_GEN.coinXRange;
+    const x = (rng() * 2 - 1) * (TRACK_WIDTH / 2 - TRACK_GEN.coinXMargin);
     const startZ = z0 + TRACK_GEN.coinLineStartMargin + rng() * (SEGMENT_LENGTH - TRACK_GEN.coinLineStartMargin - TRACK_GEN.coinLineEndMargin);
     for (let k = 0; k < n; k++) {
       const z = startZ + k * TRACK_GEN.coinSpacing;
@@ -289,7 +295,7 @@ function generateSegment(seed: number, index: number): Segment {
       const count = TRACK_GEN.buildingMin + Math.floor(rng() * TRACK_GEN.buildingRange);
       const step = SEGMENT_LENGTH / count;
       for (let k = 0; k < count; k++) {
-        const jitter = (rng() * 2 - 1) * step * BUILDING_JITTER_FRAC;
+        const jitter = (rng() * 2 - 1) * step * EVEN_SPACING_JITTER_FRAC;
         const z = z0 + step * (k + 0.5) + jitter;
         const height = TRACK_GEN.buildingHeightMin + rng() * TRACK_GEN.buildingHeightRange;
         decor.push({ id: `${index}-d${dCount++}`, kind: 'building', x: side * bankX, z, y: 0, scale: height });
@@ -303,6 +309,20 @@ function generateSegment(seed: number, index: number): Segment {
       const y = TRACK_GEN.stalactiteYMin + rng() * TRACK_GEN.stalactiteYRange;
       const scale = TRACK_GEN.decorScaleMin + rng() * TRACK_GEN.decorScaleRange;
       decor.push({ id: `${index}-d${dCount++}`, kind: 'stalactite', x, z, y, scale });
+    }
+  }
+
+  // Distant cliff decor: every zone, both banks, drawn last (after every zone-specific decor
+  // above) so it never perturbs their draws.
+  const cliffPerSide = TRACK_GEN.cliffPerSideMin + Math.floor(rng() * TRACK_GEN.cliffPerSideRange);
+  for (const side of [1, -1]) {
+    const step = SEGMENT_LENGTH / cliffPerSide;
+    for (let k = 0; k < cliffPerSide; k++) {
+      const jitter = (rng() * 2 - 1) * step * EVEN_SPACING_JITTER_FRAC;
+      const z = z0 + step * (k + 0.5) + jitter;
+      const x = side * (TRACK_GEN.cliffXMin + rng() * TRACK_GEN.cliffXRange);
+      const scale = TRACK_GEN.cliffHeightMin + rng() * TRACK_GEN.cliffHeightRange;
+      decor.push({ id: `${index}-d${dCount++}`, kind: 'cliff', x, z, y: 0, scale });
     }
   }
 
