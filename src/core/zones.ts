@@ -33,6 +33,11 @@ export const ZONES: readonly ZoneDef[] = [
     obstacleKinds: ['stalagmite', 'crystal', 'rock', 'crate'],
     iceChance: 0.7, boostChance: 0.8, bumpScale: 1.2, obstacleDensityMul: 1.1,
   },
+  {
+    id: 'volcano', nameJa: '火山の遺跡', z0: 3000, surface: 'snow',
+    obstacleKinds: ['totem', 'rock', 'crate', 'palm'],
+    iceChance: 0.2, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0,
+  },
 ];
 
 /** Last zone with z0 <= z (z < 0 returns snowfield). */
@@ -50,4 +55,4 @@ export function zoneIndex(id: ZoneId): number {
 }
 
 /** Distance milestones for goalDistance; after the last one, +GOAL.stepAfter each. */
-export const ZONE_GOALS = [600, 1200, 2000, 3000];
+export const ZONE_GOALS = [600, 1200, 2000, 3000, 4000];

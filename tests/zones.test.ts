@@ -13,7 +13,9 @@ describe('zoneAt', () => {
     expect(zoneAt(1200).id).toBe('city');
     expect(zoneAt(1999).id).toBe('city');
     expect(zoneAt(2000).id).toBe('cave');
-    expect(zoneAt(5000).id).toBe('cave');
+    expect(zoneAt(2999).id).toBe('cave');
+    expect(zoneAt(3000).id).toBe('volcano');
+    expect(zoneAt(5000).id).toBe('volcano');
   });
 });
 
@@ -23,6 +25,7 @@ describe('zoneIndex', () => {
     expect(zoneIndex('forest')).toBe(1);
     expect(zoneIndex('city')).toBe(2);
     expect(zoneIndex('cave')).toBe(3);
+    expect(zoneIndex('volcano')).toBe(4);
   });
 });
 

@@ -56,6 +56,17 @@ export interface PhysicsParams {
   pipeTakeoffVy: number;
   /** Fraction of the half-width beyond which the sled is considered at the pipe's rim. */
   pipeRimFraction: number;
+  /** Max height (m) the ground at the new position may exceed the sled's current y before a
+   * lateral or forward move is blocked as a wall (terrain routes §2). */
+  stepUpLimit: number;
+  /** vz multiplier applied when a forward step is blocked by a front wall. */
+  frontWallSpeedMul: number;
+  /** Stun duration (s) applied when a forward step is blocked by a front wall. */
+  frontWallStun: number;
+  /** Stun duration (s) applied on a route-section wipeout (hazard floor, off a pillar). */
+  wipeoutStun: number;
+  /** vz is capped to this on a route-section wipeout. */
+  wipeoutSpeed: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
@@ -109,6 +120,11 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   steerAccelPipe: 18,
   pipeTakeoffVy: 4,
   pipeRimFraction: 0.85,
+  stepUpLimit: 1.2,
+  frontWallSpeedMul: 0.3,
+  frontWallStun: 0.5,
+  wipeoutStun: 1.0,
+  wipeoutSpeed: 10,
 };
 
 export const LAUNCH = {

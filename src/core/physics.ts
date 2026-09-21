@@ -38,6 +38,7 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     triggeredPadIds: new Set<string>(),
     brokenObstacleIds: new Set<string>(),
     breakCount: 0,
+    wipeoutCount: 0,
   };
 }
 

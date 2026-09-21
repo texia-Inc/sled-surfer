@@ -3,11 +3,25 @@ export type Surface = 'snow' | 'ice' | 'road';
 export type ObstacleKind =
   | 'tree' | 'rock' | 'snowman'
   | 'stump' | 'car' | 'bus' | 'sign' | 'barrier' | 'stalagmite' | 'crystal'
-  | 'hay' | 'crate' | 'fence' | 'wall';
+  | 'hay' | 'crate' | 'fence' | 'wall' | 'totem' | 'palm';
 export type UpgradeKind = 'slingshot' | 'sled' | 'income';
 
-export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave';
-export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff' | 'signpost';
+export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave' | 'volcano';
+export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff' | 'signpost' | 'palm' | 'temple';
+
+export type LaneKind = 'ridge' | 'ground' | 'pillars';
+/** A lane within a multi-height RouteSection: heightAt adds `yOffset` (blended in/out at the
+ * section's entry/exit) for x inside [xMin, xMax]. */
+export interface Lane { xMin: number; xMax: number; yOffset: number; kind: LaneKind; }
+/** A pillar in a `pillars` lane: circular (radius r), rising `yOffset` metres above the lane's
+ * own (hazard) floor when (x, z) is within `radius` of (x, z). */
+export interface Pillar { id: string; x: number; z: number; radius: number; yOffset: number; }
+/** A multi-height route section (terrain routes §1): lanes partition the track width; pillars sit
+ * in the `pillars` lane's hazard floor. `hazard` is the fluff at the pillar lane's floor ('lava'
+ * in the volcano zone, 'chasm' elsewhere). */
+export interface RouteSection {
+  z0: number; z1: number; lanes: Lane[]; pillars: Pillar[]; hazard: 'lava' | 'chasm';
+}
 
 /** 当たり判定なしの見た目用オブジェクト。y は地面からの高さ (stalactite の先端の基準点用)。他は 0 */
 export interface Decor { id: string; kind: DecorKind; x: number; z: number; y: number; scale: number; }
@@ -47,6 +61,9 @@ export interface Segment {
   zone: ZoneId;
   gate: Gate | null;
   decor: Decor[];
+  /** Multi-height route section spanning part of this segment, or null when it has none
+   * (terrain routes §1). */
+  route: RouteSection | null;
 }
 
 /** 物理が必要とするコースの問い合わせ。テストではこれを偽装する */
@@ -58,12 +75,22 @@ export interface TrackQuery {
   widthAt(z: number): number;
   /** The half-pipe span containing `z`, or null when `z` isn't inside one. */
   pipeAt(z: number): { z0: number; z1: number; wallHeight: number } | null;
+  /** The lane containing (z, x) inside a route section, or null outside any route section.
+   * Optional so pre-existing fakes (without a route feature to test) need no change. */
+  laneAt?(z: number, x: number): Lane | null;
+  /** Whether (z, x) sits within a pillar's radius inside a route section's `pillars` lane.
+   * Optional for the same reason as laneAt. */
+  onPillar?(z: number, x: number): boolean;
 }
 
 export interface Track extends TrackQuery {
   seed: number;
   getSegment(index: number): Segment;
   segmentIndexAt(z: number): number;
+  /** The route section containing `z`, or null when `z` isn't inside one. */
+  routeAt(z: number): RouteSection | null;
+  laneAt(z: number, x: number): Lane | null;
+  onPillar(z: number, x: number): boolean;
 }
 
 export interface Input { steer: number; rocket: boolean; }
@@ -99,6 +126,8 @@ export interface RunState {
   brokenObstacleIds: Set<string>;
   /** Number of obstacles broken this run (effects trigger on change). */
   breakCount: number;
+  /** Number of times this run has wiped out on a route section's hazard floor (terrain routes §2). */
+  wipeoutCount: number;
 }
 
 export interface Upgrades { slingshot: number; sled: number; income: number; }

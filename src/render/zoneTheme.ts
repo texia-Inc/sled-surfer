@@ -57,6 +57,16 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     fogFar: 180,
     gate: new THREE.Color(0xb388ff),
   },
+  volcano: {
+    ground: new THREE.Color(0.32, 0.27, 0.24),
+    ice: new THREE.Color(0.75, 0.85, 1.0),
+    bank: new THREE.Color(0.08, 0.06, 0.06),
+    sky: new THREE.Color(0xc7a4e0),
+    fog: new THREE.Color(0x998aa0),
+    fogNear: 55,
+    fogFar: 300,
+    gate: new THREE.Color(0xff6a1f),
+  },
 };
 
 /** The theme of the zone containing distance `z`. */

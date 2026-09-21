@@ -1,5 +1,6 @@
 import type {
-  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Obstacle, ObstacleKind, Ramp, Segment, Surface, Track,
+  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Lane, Obstacle, ObstacleKind, Ramp, RouteSection, Segment, Surface,
+  Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
 import { zoneAt } from './zones';
@@ -48,6 +49,10 @@ export const TRACK_GEN = {
   cliffPerSideMin: 3, cliffPerSideRange: 2,
   cliffXMin: 30, cliffXRange: 10,
   cliffHeightMin: 15, cliffHeightRange: 15,
+  /** Volcano zone decor: palms on both banks (like forest pines) and a couple of temple blocks
+   * per side, further out than the palms. */
+  palmMin: 8, palmRange: 6,
+  templePerSide: 2, templeXOffset: 4, templeHeightMin: 6, templeHeightRange: 6,
   /** Track width (m) varies per segment: widthEnd is uniform in [widthMin, widthMax]; a
    * segment's widthStart is the previous segment's widthEnd (segment 0 starts at TRACK_WIDTH). */
   widthMin: 20, widthMax: 36,
@@ -171,7 +176,7 @@ function localHeight(seg: Segment, z: number, x: number): number {
 const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
   tree: 0.8, rock: 1.0, snowman: 0.7,
   stump: 0.7, car: 1.3, bus: 2.2, sign: 0.5, barrier: 1.2, stalagmite: 0.8, crystal: 0.9,
-  hay: 0.9, crate: 0.7, fence: 1.5, wall: 1.6,
+  hay: 0.9, crate: 0.7, fence: 1.5, wall: 1.6, totem: 0.8, palm: 0.7,
 };
 
 /** Whether hitting this obstacle kind breaks it (see physics.ts collision handling) rather than
@@ -179,7 +184,7 @@ const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
 export const OBSTACLE_BREAKABLE: Record<ObstacleKind, boolean> = {
   tree: false, rock: false, snowman: true,
   stump: true, car: false, bus: false, sign: true, barrier: true, stalagmite: false, crystal: false,
-  hay: true, crate: true, fence: true, wall: false,
+  hay: true, crate: true, fence: true, wall: false, totem: false, palm: false,
 };
 
 function generateSegment(seed: number, index: number): Segment {
@@ -509,6 +514,26 @@ function generateSegment(seed: number, index: number): Segment {
       const scale = TRACK_GEN.decorScaleMin + rng() * TRACK_GEN.decorScaleRange;
       decor.push({ id: `${index}-d${dCount++}`, kind: 'stalactite', x, z, y, scale });
     }
+  } else if (zone.id === 'volcano') {
+    const palmCount = TRACK_GEN.palmMin + Math.floor(rng() * TRACK_GEN.palmRange);
+    for (let k = 0; k < palmCount; k++) {
+      const side = k % 2 === 0 ? 1 : -1;
+      const bank = TRACK_GEN.decorBankMin + rng() * (TRACK_GEN.decorBankMax - TRACK_GEN.decorBankMin);
+      const z = z0 + rng() * SEGMENT_LENGTH;
+      const scale = TRACK_GEN.decorScaleMin + rng() * TRACK_GEN.decorScaleRange;
+      decor.push({ id: `${index}-d${dCount++}`, kind: 'palm', x: side * bank, z, y: 0, scale });
+    }
+    const templeX = TRACK_GEN.decorBankMin + TRACK_GEN.templeXOffset;
+    for (const side of [1, -1]) {
+      const count = TRACK_GEN.templePerSide;
+      const step = SEGMENT_LENGTH / count;
+      for (let k = 0; k < count; k++) {
+        const jitter = (rng() * 2 - 1) * step * EVEN_SPACING_JITTER_FRAC;
+        const z = z0 + step * (k + 0.5) + jitter;
+        const height = TRACK_GEN.templeHeightMin + rng() * TRACK_GEN.templeHeightRange;
+        decor.push({ id: `${index}-d${dCount++}`, kind: 'temple', x: side * templeX, z, y: 0, scale: height });
+      }
+    }
   }
 
   // Distant cliff decor: every zone, both banks, drawn last (after every zone-specific decor
@@ -532,7 +557,7 @@ function generateSegment(seed: number, index: number): Segment {
 
   return {
     index, z0, z1, widthStart, widthEnd, split, pipes, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
-    zone: zone.id, gate, decor,
+    zone: zone.id, gate, decor, route: null,
   };
 }
 
@@ -626,5 +651,38 @@ export function createTrack(seed: number): Track {
     return out;
   };
 
-  return { seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt };
+  /** The route section containing `z`, or null outside one (terrain routes §1). A route section
+   * never crosses a segment boundary (routeMargin keeps it inside its segment). */
+  const routeAt = (z: number): RouteSection | null => {
+    if (z < 0) return null;
+    return getSegment(segmentIndexAt(z)).route;
+  };
+
+  /** The lane containing (z, x), clamped to the nearest lane when x falls (by floating-point
+   * slop) just outside every lane's span, since lanes partition the section's full width. */
+  const laneAt = (z: number, x: number): Lane | null => {
+    const route = routeAt(z);
+    if (!route || route.lanes.length === 0) return null;
+    for (const lane of route.lanes) {
+      if (x >= lane.xMin && x <= lane.xMax) return lane;
+    }
+    const first = route.lanes[0];
+    const last = route.lanes[route.lanes.length - 1];
+    return x < first.xMin ? first : last;
+  };
+
+  const onPillar = (z: number, x: number): boolean => {
+    const route = routeAt(z);
+    if (!route) return false;
+    return route.pillars.some((p) => {
+      const dx = x - p.x;
+      const dz = z - p.z;
+      return dx * dx + dz * dz <= p.radius * p.radius;
+    });
+  };
+
+  return {
+    seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt,
+    routeAt, laneAt, onPillar,
+  };
 }
