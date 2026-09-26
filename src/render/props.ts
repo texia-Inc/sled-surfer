@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { Decor, Gate, Segment, Track, ZoneId } from '../core/types';
+import type { Decor, Gate, Lane, RouteSection, Segment, Track, ZoneId } from '../core/types';
 import type { PhysicsParams } from '../core/params';
 import { coinWorldY } from '../core/physics';
-import { RAMP_BIG, RAMP_SMALL, TRACK_WIDTH } from '../core/track';
+import { RAMP_BIG, RAMP_SMALL, TRACK_GEN, TRACK_WIDTH } from '../core/track';
 import { ZONES } from '../core/zones';
 import { ZONE_THEMES } from './zoneTheme';
 
@@ -82,6 +82,23 @@ const BARRIER_STRIPE = { w: 2.4, h: 0.22, d: 0.32 };
 const STALAGMITE_RADIUS = 0.7;
 const STALAGMITE_HEIGHT = 2.4;
 const CRYSTAL_RADIUS = 0.8;
+
+// --- Route section geometry constants (terrain routes §4) ---
+const ROUTE_WALL_BLOCK = { w: 2.5, h: 4.5, d: 2.5 };
+const ROUTE_WALL_SPACING = 3;
+const ROUTE_WALL_COLOR = 0x6d6a66;
+const ROUTE_PILLAR_RADIUS_SCALE = 0.9;
+const ROUTE_PILLAR_HEIGHT = TRACK_GEN.hazardDepth + TRACK_GEN.pillarTop;
+const ROUTE_PILLAR_COLOR = 0x5a4b43;
+const ROUTE_PILLAR_CAP_THICKNESS = 0.4;
+const ROUTE_PILLAR_CAP_COLOR = 0x7a6b5f;
+const ROUTE_SIGNPOST_LEAD = 6;
+const ROUTE_SIGNPOST_POLE_HEIGHT = 3;
+const ROUTE_SIGNPOST_BOARD = { w: 1.4, h: 0.5, d: 0.1 };
+const ROUTE_SIGNPOST_BOARD_GAP = 0.6;
+const ROUTE_LANE_BOARD_COLOR: Record<Lane['kind'], number> = {
+  ridge: 0xffd23f, ground: 0xffffff, pillars: 0xff6a2b,
+};
 
 // --- Decor geometry constants ---
 const BUILDING_SIZE = { w: 7, d: 7 };
@@ -182,6 +199,22 @@ export class PropManager {
   private readonly stalagmiteGeo = new THREE.ConeGeometry(STALAGMITE_RADIUS, STALAGMITE_HEIGHT, 7);
   private readonly crystalGeo = new THREE.OctahedronGeometry(CRYSTAL_RADIUS, 0);
 
+  // --- Route section geometries (terrain routes §4) ---
+  private readonly routeWallGeo = new THREE.BoxGeometry(ROUTE_WALL_BLOCK.w, ROUTE_WALL_BLOCK.h, ROUTE_WALL_BLOCK.d);
+  private readonly routePillarGeo = new THREE.CylinderGeometry(
+    TRACK_GEN.pillarRadius * ROUTE_PILLAR_RADIUS_SCALE, TRACK_GEN.pillarRadius * ROUTE_PILLAR_RADIUS_SCALE,
+    ROUTE_PILLAR_HEIGHT, 16,
+  );
+  private readonly routePillarCapGeo = new THREE.CylinderGeometry(
+    TRACK_GEN.pillarRadius, TRACK_GEN.pillarRadius, ROUTE_PILLAR_CAP_THICKNESS, 20,
+  );
+  private readonly routeSignpostPoleGeo = new THREE.CylinderGeometry(
+    SIGNPOST_POLE_RADIUS, SIGNPOST_POLE_RADIUS, ROUTE_SIGNPOST_POLE_HEIGHT, 8,
+  );
+  private readonly routeSignpostBoardGeo = new THREE.BoxGeometry(
+    ROUTE_SIGNPOST_BOARD.w, ROUTE_SIGNPOST_BOARD.h, ROUTE_SIGNPOST_BOARD.d,
+  );
+
   // --- Breakable obstacle geometries ---
   private readonly hayGeo = new THREE.CylinderGeometry(HAY_RADIUS, HAY_RADIUS, HAY_LENGTH, 12);
   private readonly crateGeo = new THREE.BoxGeometry(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE);
@@ -245,6 +278,17 @@ export class PropManager {
   private readonly matBarrierStripe = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   private readonly matStalagmite = new THREE.MeshLambertMaterial({ color: 0x5c6b7a, flatShading: true });
   private readonly matCrystal = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
+
+  // --- Route section materials (terrain routes §4) ---
+  private readonly matRouteWall = new THREE.MeshLambertMaterial({ color: ROUTE_WALL_COLOR, flatShading: true });
+  private readonly matRoutePillar = new THREE.MeshLambertMaterial({ color: ROUTE_PILLAR_COLOR, flatShading: true });
+  private readonly matRoutePillarCap = new THREE.MeshLambertMaterial({ color: ROUTE_PILLAR_CAP_COLOR, flatShading: true });
+  private readonly matRouteSignpostPole = new THREE.MeshLambertMaterial({ color: 0x8b8f99, flatShading: true });
+  private readonly matRouteBoard = new Map<Lane['kind'], THREE.MeshLambertMaterial>(
+    (Object.keys(ROUTE_LANE_BOARD_COLOR) as Lane['kind'][]).map(
+      (k) => [k, new THREE.MeshLambertMaterial({ color: ROUTE_LANE_BOARD_COLOR[k], flatShading: true })],
+    ),
+  );
 
   // --- Breakable obstacle materials ---
   private readonly matHay = new THREE.MeshLambertMaterial({ color: HAY_COLOR, flatShading: true });
@@ -543,8 +587,75 @@ export class PropManager {
 
     for (const d of seg.decor) this.buildDecor(group, d, seg.zone);
     if (seg.gate) this.buildGate(group, seg.gate);
+    if (seg.route) this.buildRoute(group, seg.route);
 
     return { group, coins, obstacles };
+  }
+
+  /** Ridge-wall rock blocks, pillar cylinders/caps and the entry signpost for a route section
+   * (terrain routes §4). Positions are absolute world coordinates, same as every other prop, so
+   * it doesn't matter which segment bundle owns the group. */
+  private buildRoute(group: THREE.Group, route: RouteSection): void {
+    const zEnd = route.z1 - TRACK_GEN.routeExitBlend;
+    for (let li = 0; li < route.lanes.length; li++) {
+      const lane = route.lanes[li];
+      if (lane.kind !== 'ridge') continue;
+      // The ridge's inner boundary is whichever edge borders a lower lane: xMax when the ridge
+      // is the leftmost lane (layouts A/C), xMin when it's the rightmost (layout B).
+      const innerX = li === 0 ? lane.xMax : lane.xMin;
+      const lowSign = li === 0 ? 1 : -1;
+      for (let z = route.z0; z <= zEnd; z += ROUTE_WALL_SPACING) {
+        const lowY = this.track.heightAt(z, innerX + lowSign * 0.5);
+        this.addRouteWallBlock(group, innerX, lowY, z);
+      }
+      // Entry step face: a row of blocks across the ridge lane's own width at z0, showing the
+      // step-up wall from the front.
+      for (let x = lane.xMin; x <= lane.xMax; x += ROUTE_WALL_SPACING) {
+        const lowY = this.track.heightAt(route.z0 - 1, x);
+        this.addRouteWallBlock(group, x, lowY, route.z0);
+      }
+    }
+
+    for (const pillar of route.pillars) {
+      const topY = this.track.heightAt(pillar.z, pillar.x);
+      const body = new THREE.Mesh(this.routePillarGeo, this.matRoutePillar);
+      body.position.set(pillar.x, topY - ROUTE_PILLAR_HEIGHT / 2, -pillar.z);
+      group.add(body);
+      const cap = new THREE.Mesh(this.routePillarCapGeo, this.matRoutePillarCap);
+      cap.position.set(pillar.x, topY + ROUTE_PILLAR_CAP_THICKNESS / 2, -pillar.z);
+      group.add(cap);
+    }
+
+    this.buildRouteSignpost(group, route);
+  }
+
+  /** Deterministic per-block y-rotation (small jitter), derived from position so it stays stable
+   * across rebuilds. */
+  private addRouteWallBlock(group: THREE.Group, x: number, groundY: number, z: number): void {
+    const block = new THREE.Mesh(this.routeWallGeo, this.matRouteWall);
+    block.position.set(x, groundY + ROUTE_WALL_BLOCK.h / 2, -z);
+    block.rotation.y = (((z * 13 + x * 7) % 30) - 15) / 100;
+    group.add(block);
+  }
+
+  /** One arrow board per lane (colour matches the lane kind), stacked on a pole placed
+   * routeEntryRampLead + ROUTE_SIGNPOST_LEAD metres before the section's entry ramp. */
+  private buildRouteSignpost(group: THREE.Group, route: RouteSection): void {
+    const z = route.z0 - TRACK_GEN.routeEntryRampLead - ROUTE_SIGNPOST_LEAD;
+    const ground = this.track.heightAt(z);
+    const holder = new THREE.Group();
+    holder.position.set(0, ground, -z);
+    const pole = new THREE.Mesh(this.routeSignpostPoleGeo, this.matRouteSignpostPole);
+    pole.position.y = ROUTE_SIGNPOST_POLE_HEIGHT / 2;
+    holder.add(pole);
+    route.lanes.forEach((lane, i) => {
+      const board = new THREE.Mesh(this.routeSignpostBoardGeo, this.matRouteBoard.get(lane.kind)!);
+      const y = ROUTE_SIGNPOST_POLE_HEIGHT - ROUTE_SIGNPOST_BOARD.h / 2
+        - i * (ROUTE_SIGNPOST_BOARD.h + ROUTE_SIGNPOST_BOARD_GAP);
+      board.position.set(0, Math.max(y, ROUTE_SIGNPOST_BOARD.h / 2), 0);
+      holder.add(board);
+    });
+    group.add(holder);
   }
 
   private buildDecor(group: THREE.Group, d: Decor, zone: ZoneId): void {
