@@ -639,3 +639,14 @@ describe('route sections: walls and wipeouts', () => {
     expect(s.wipeoutCount).toBe(0);
   });
 });
+
+describe('air steering', () => {
+  it('steering while airborne drifts the sled sideways', () => {
+    const s = grounded({ vz: 20 });
+    s.grounded = false; s.y = 6; s.vy = 0;
+    for (let i = 0; i < 60; i++) stepRun(s, { steer: 1, rocket: false }, DT, flat, DEFAULT_PHYSICS);
+    expect(s.grounded).toBe(false);
+    expect(s.vx).toBeCloseTo(DEFAULT_PHYSICS.airSteerAccel * 0.5, 1);
+    expect(s.x).toBeGreaterThan(0.5);
+  });
+});

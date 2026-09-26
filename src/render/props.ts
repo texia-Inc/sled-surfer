@@ -676,12 +676,7 @@ export class PropManager {
         const lowY = this.track.heightAt(z, innerX + lowSign * 0.5);
         this.addRouteWallBlock(group, innerX, lowY, z);
       }
-      // Entry step face: a row of blocks across the ridge lane's own width at z0, showing the
-      // step-up wall from the front.
-      for (let x = lane.xMin; x <= lane.xMax; x += ROUTE_WALL_SPACING) {
-        const lowY = this.track.heightAt(route.z0 - 1, x);
-        this.addRouteWallBlock(group, x, lowY, route.z0);
-      }
+      // (The ridge is entered up an incline over routeRidgeRamp metres, so there is no step face.)
     }
 
     for (const pillar of route.pillars) {

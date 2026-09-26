@@ -79,11 +79,17 @@ export const TRACK_GEN = {
    * over routeExitBlend metres. A big entry ramp sits routeEntryRampLead before the section at
    * the ridge lane's centre. */
   routeChance: 0.4, routeMinZ: 400, routeLenMin: 100, routeLenRange: 60, routeMargin: 20,
-  ridgeHeight: 4, hazardDepth: 6, pillarTop: 2, pillarRadius: 5, pillarSpacing: 28, pillarFirstOffset: 6,
-  routeEntryStep: 1, routeExitBlend: 12, routeEntryRampLead: 22, routeEntryRampWidth: 8,
+  ridgeHeight: 4, hazardDepth: 6, pillarTop: 2, pillarRadius: 6, pillarSpacing: 28, pillarFirstOffset: 22,
+  /** Ridge lanes rise over an incline of routeRidgeRamp metres (drive up if you are already in the
+   * lane); other lanes step over routeEntryStep. A small launch ramp sits routeEntryRampLead before
+   * the section in the pillars lane so the first pillar is reached by a jump. */
+  routeEntryStep: 1, routeRidgeRamp: 12, routeExitBlend: 12, routeEntryRampLead: 14, routeEntryRampWidth: 5,
   /** Pillar ramps end at the pillar's far edge: z = pillar.z + pillarRadius - RAMP_SMALL.length. */
-  pillarRampWidth: 5, pillarRampOffset: 5 - 12, ridgeCoinMul: 3, ridgeCoinSpacing: 1.5, pillarCoins: 3, pillarCoinSpacing: 1.5,
+  pillarRampWidth: 5, pillarRampOffset: 6 - 12, ridgeCoinMul: 3, ridgeCoinSpacing: 1.5, pillarCoins: 3, pillarCoinSpacing: 1.5,
   narrowLayoutWidth: 24,
+  /** No drop may end, and no big free ramp may start, within this many metres before a route
+   * section: a launch from either sails clean over the whole section. */
+  routeApproachClear: 150,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -175,7 +181,8 @@ function pipeHeight(p: Segment['pipes'][number], z: number, x: number, halfWidth
 
 /** Lane containing x (clamped to the nearest lane outside the partition). */
 function laneFor(route: RouteSection, x: number): Lane {
-  for (const lane of route.lanes) if (x >= lane.xMin && x <= lane.xMax) return lane;
+  // Half-open intervals so a boundary x (e.g. x = 0 in a two-lane layout) belongs to one lane only.
+  for (const lane of route.lanes) if (x >= lane.xMin && x < lane.xMax) return lane;
   const first = route.lanes[0];
   return x < first.xMin ? first : route.lanes[route.lanes.length - 1];
 }
@@ -200,7 +207,8 @@ function routeHeight(route: RouteSection, z: number, x: number): number {
     const pillar = pillarAt(route, z, x);
     off = pillar ? pillar.yOffset : lane.yOffset;
   }
-  const entry = Math.min(1, Math.max(0, (z - route.z0) / TRACK_GEN.routeEntryStep));
+  const entryLen = lane.kind === 'ridge' ? TRACK_GEN.routeRidgeRamp : TRACK_GEN.routeEntryStep;
+  const entry = Math.min(1, Math.max(0, (z - route.z0) / entryLen));
   const exit = 1 - Math.min(1, Math.max(0, (z - (route.z1 - TRACK_GEN.routeExitBlend)) / TRACK_GEN.routeExitBlend));
   return off * entry * exit;
 }
@@ -311,14 +319,13 @@ function generateSegment(seed: number, index: number): Segment {
             k++;
           }
         }
-        const ridgeLane = lanes.find((l) => l.kind === 'ridge');
-        if (ridgeLane) {
+        if (pillarLane) {
           const ez = rz0 - TRACK_GEN.routeEntryRampLead;
           // Keep the plank inside the (possibly narrower) track at its own z.
           const entryHalf = TRACK_GEN.routeEntryRampWidth / 2 + 1;
-          const ex = Math.max(-widthAt(ez) / 2 + entryHalf, Math.min(widthAt(ez) / 2 - entryHalf, (ridgeLane.xMin + ridgeLane.xMax) / 2));
+          const ex = Math.max(-widthAt(ez) / 2 + entryHalf, Math.min(widthAt(ez) / 2 - entryHalf, (pillarLane.xMin + pillarLane.xMax) / 2));
           routeRamps.push({
-            id: `${index}-re`, z: ez, length: RAMP_BIG.length, height: RAMP_BIG.height,
+            id: `${index}-re`, z: ez, length: RAMP_SMALL.length, height: RAMP_SMALL.height,
             x: ex, width: TRACK_GEN.routeEntryRampWidth,
           });
         }
@@ -329,6 +336,15 @@ function generateSegment(seed: number, index: number): Segment {
   const inRouteSpan = (z: number): boolean => route !== null
     && z >= route.z0 - TRACK_GEN.routeEntryRampLead - TRACK_GEN.rampExclusionBefore
     && z <= route.z1 + TRACK_GEN.rampExclusionAfter;
+  const inRouteApproach = (z: number): boolean => route !== null
+    && z >= route.z0 - TRACK_GEN.routeApproachClear && z <= route.z1;
+  // Bumps overlapping a route section are removed (their rng draws already happened, so nothing
+  // shifts): at speed a crest launches the sled clean over the lanes, which defeats the choice.
+  if (route !== null) {
+    const keep = bumps.filter((b) => b.z + b.width < route.z0 - TRACK_GEN.routeEntryRampLead || b.z - b.width > route.z1);
+    bumps.length = 0;
+    bumps.push(...keep);
+  }
 
   // Ramps and drops. A drop's companion big ramp (added first, if a drop is rolled) counts
   // toward the segment's 1-2 ramps; any further ramps are drawn small/big at rampBigChance and
@@ -352,7 +368,8 @@ function generateSegment(seed: number, index: number): Segment {
     const dz = z0 + TRACK_GEN.dropStartMargin
       + rng() * (SEGMENT_LENGTH - TRACK_GEN.dropStartMargin - TRACK_GEN.dropEndMargin);
     const depth = TRACK_GEN.dropDepthMin + rng() * TRACK_GEN.dropDepthRange;
-    const dropClearOfRoute = !inRouteSpan(dz - RAMP_BIG.length) && !inRouteSpan(dz + TRACK_GEN.dropLength);
+    const dropClearOfRoute = !inRouteSpan(dz - RAMP_BIG.length) && !inRouteSpan(dz + TRACK_GEN.dropLength)
+      && !inRouteApproach(dz + TRACK_GEN.dropLength);
     if (dropClearOfRoute) drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
     // Big drop ramps are centred (x=0) so the drop line-up is fair regardless of who's aiming.
     if (dropClearOfRoute) ramps.push({
@@ -370,6 +387,7 @@ function generateSegment(seed: number, index: number): Segment {
     const rz = rampSpanLo + rng() * (rampSpanHi - rampSpanLo);
     if (ramps.some((r) => Math.abs(rz - r.z) < TRACK_GEN.rampMinGap)) continue;
     if (inRouteSpan(rz) || inRouteSpan(rz + template.length)) continue;
+    if (big && inRouteApproach(rz)) continue;
     const width = big ? TRACK_GEN.rampBigWidth : TRACK_GEN.rampWidth;
     ramps.push({
       id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height,
@@ -803,7 +821,7 @@ export function createTrack(seed: number): Track {
     const route = routeAt(z);
     if (!route || route.lanes.length === 0) return null;
     for (const lane of route.lanes) {
-      if (x >= lane.xMin && x <= lane.xMax) return lane;
+      if (x >= lane.xMin && x < lane.xMax) return lane;
     }
     const first = route.lanes[0];
     const last = route.lanes[route.lanes.length - 1];

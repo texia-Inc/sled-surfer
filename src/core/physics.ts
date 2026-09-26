@@ -163,12 +163,13 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   } else {
     s.vy -= p.g * dt;
     s.vz += (drag + rocketA + boostA) * dt;
+    if (!wasStunned) s.vx += steer * p.airSteerAccel * dt;
     if (s.vz < 0) s.vz = 0;
     s.z += s.vz * dt;
     s.y += s.vy * dt;
     s.airTime += dt;
     s.flips = Math.floor(s.airTime / p.flipSeconds);
-    const ground = track.heightAt(s.z);
+    const ground = track.heightAt(s.z, s.x);
     if (s.y <= ground) {
       s.y = ground;
       s.vy = 0;

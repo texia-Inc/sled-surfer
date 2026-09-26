@@ -764,11 +764,18 @@ describe('route sections', () => {
       expect(Math.abs(ramp!.x - p.x)).toBeLessThanOrEqual(3);
       expect(ramp!.width).toBe(TRACK_GEN.pillarRampWidth);
     }
-    const ridge = route.lanes.find((l) => l.kind === 'ridge')!;
+    const pillarLane = route.lanes.find((l) => l.kind === 'pillars')!;
     const entry = seg.ramps.find((r) => r.id.endsWith('-re'))!;
     expect(entry.z).toBeCloseTo(route.z0 - TRACK_GEN.routeEntryRampLead, 6);
     expect(entry.width).toBe(TRACK_GEN.routeEntryRampWidth);
-    expect(Math.abs(entry.x - (ridge.xMin + ridge.xMax) / 2)).toBeLessThanOrEqual(4);
+    expect(entry.height).toBe(RAMP_SMALL.height);
+    expect(Math.abs(entry.x - (pillarLane.xMin + pillarLane.xMax) / 2)).toBeLessThanOrEqual(4);
+    // The ridge is entered by driving up an incline: half height halfway up the ramp.
+    const ridge = route.lanes.find((l) => l.kind === 'ridge')!;
+    const ground0 = route.lanes.find((l) => l.kind === 'ground')!;
+    const rc = (ridge.xMin + ridge.xMax) / 2, gc = (ground0.xMin + ground0.xMax) / 2;
+    const half = route.z0 + TRACK_GEN.routeRidgeRamp / 2;
+    expect(t.heightAt(half, rc) - t.heightAt(half, gc)).toBeCloseTo(TRACK_GEN.ridgeHeight / 2, 1);
   });
 
   it('heightAt reflects each lane: ridge +4, hazard floor -6, pillar top +2, and 0 again at z1', () => {
@@ -788,7 +795,7 @@ describe('route sections', () => {
     expect(t.onPillar(p0.z, p0.x)).toBe(true);
     expect(t.onPillar(between, p0.x)).toBe(false);
     // Pillar top relative to the ground lane, sampled beside the pillar ramp (x + 3 is on the
-    // pillar, radius 5, but off the 5 m-wide ramp).
+    // pillar, radius 6, but off the 5 m-wide ramp).
     expect(t.heightAt(p0.z, p0.x + 3) - t.heightAt(p0.z, centre(ground))).toBeCloseTo(TRACK_GEN.pillarTop, 3);
     // The ramp lip coincides with the pillar edge: no cliff between ramp end and hazard floor.
     const pr = seg.ramps.find((r) => r.id === `${seg.index}-pr0`)!;
@@ -813,7 +820,15 @@ describe('route sections', () => {
           if (/-l\d+-/.test(c.id)) expect(c.z < lo || c.z > hi).toBe(true);
         }
         for (const d of seg.drops) expect(d.z + d.length < lo || d.z - RAMP_BIG.length > hi).toBe(true);
+        // Nothing that launches the sled sits in the approach: no drop ends, and no big free ramp starts,
+        // within routeApproachClear before the section.
+        for (const d of seg.drops) expect(d.z + d.length < seg.route.z0 - TRACK_GEN.routeApproachClear || d.z > seg.route.z1).toBe(true);
+        for (const r of seg.ramps) {
+          if (r.id.includes('-pr') || r.id.endsWith('-re')) continue;
+          if (r.height === RAMP_BIG.height) expect(r.z < seg.route.z0 - TRACK_GEN.routeApproachClear || r.z > seg.route.z1).toBe(true);
+        }
         for (const p of seg.pipes) expect(p.z1 < lo || p.z0 > hi).toBe(true);
+        for (const b of seg.bumps) expect(b.z + b.width < seg.route.z0 - TRACK_GEN.routeEntryRampLead || b.z - b.width > seg.route.z1).toBe(true);
       }
     }
   });
