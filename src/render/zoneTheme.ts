@@ -98,7 +98,9 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
   space: {
     ground: new THREE.Color(0.82, 0.90, 1.0),
     ice: new THREE.Color(0.75, 0.88, 1.0),
-    bank: new THREE.Color(0.02, 0.03, 0.08),
+    /** Pure black = void: the terrain shader discards these fragments so the sky dome shows
+     * through beside the track (see terrain.ts VOID_THRESHOLD). */
+    bank: new THREE.Color(0, 0, 0),
     sky: new THREE.Color(0x05060f),
     fog: new THREE.Color(0x0a0d1f),
     fogNear: 140,
@@ -191,7 +193,7 @@ export const SKY_THEMES: Record<ZoneId, SkyTheme> = {
     cloudAmount: 0,
     stars: 1,
     planet: 1,
-    planetDir: new THREE.Vector3(0, -0.55, -0.83).normalize(),
+    planetDir: new THREE.Vector3(0, -0.45, -0.89).normalize(),
   },
 };
 

@@ -43,12 +43,29 @@ const LAVA_COLOR = new THREE.Color(1.0, 0.45, 0.10);
 const CHASM_COLOR = new THREE.Color(0.10, 0.11, 0.16);
 const RIDGE_DARKEN = 0.9;
 
+/** Vertex colours at or below this (all channels) mark "void": the fragment is discarded so the
+ * sky dome (stars, the planet) shows through. Only the space zone's bank colour is pure black
+ * (see ZONE_THEMES.space.bank); every real surface colour is far brighter. */
+const VOID_THRESHOLD = 0.004;
+
+/** Injects a discard for void vertex colours into a vertex-coloured Lambert material. */
+function withVoidDiscard(mat: THREE.MeshLambertMaterial): THREE.MeshLambertMaterial {
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      if (vColor.r <= ${VOID_THRESHOLD} && vColor.g <= ${VOID_THRESHOLD} && vColor.b <= ${VOID_THRESHOLD}) discard;`,
+    );
+  };
+  return mat;
+}
+
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
   private farMeshes = new Map<number, THREE.Mesh>();
   /** Per-zone detail-textured material for the near (detailed) segment meshes (art §4). */
   private readonly materials = new Map<ZoneId, THREE.MeshLambertMaterial>();
-  private readonly farMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  private readonly farMaterial = withVoidDiscard(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
   private readonly colorTmp = new THREE.Color();
   private track: Track;
 
@@ -99,7 +116,7 @@ export class TerrainManager {
   private materialFor(zone: ZoneId): THREE.MeshLambertMaterial {
     let mat = this.materials.get(zone);
     if (!mat) {
-      mat = new THREE.MeshLambertMaterial({ map: zoneDetailTexture(zone), vertexColors: true, flatShading: true });
+      mat = withVoidDiscard(new THREE.MeshLambertMaterial({ map: zoneDetailTexture(zone), vertexColors: true, flatShading: true }));
       this.materials.set(zone, mat);
     }
     return mat;

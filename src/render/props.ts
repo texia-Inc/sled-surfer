@@ -228,9 +228,14 @@ function cliffWidth(z: number): number {
   return CLIFF_WIDTH_MIN + ((z * 7) % CLIFF_WIDTH_RANGE);
 }
 
-/** Deterministic 60-120m width for a dune, derived from its z (same style as cliffWidth). */
-function duneWidth(z: number): number {
-  return DUNE_WIDTH_MIN + ((z * 7) % DUNE_WIDTH_RANGE);
+/** Dunes never reach closer than this to the centreline, whatever their width (the track's
+ * widest half-width plus a margin), so a wide dune placed at |x| 50 cannot spill onto the track. */
+const DUNE_TRACK_CLEARANCE = 24;
+/** Deterministic 60-120m width for a dune, derived from its z (same style as cliffWidth), then
+ * capped so the inner edge stays DUNE_TRACK_CLEARANCE from the centreline. */
+function duneWidth(z: number, x: number): number {
+  const raw = DUNE_WIDTH_MIN + ((z * 7) % DUNE_WIDTH_RANGE);
+  return Math.min(raw, 2 * (Math.abs(x) - DUNE_TRACK_CLEARANCE));
 }
 
 /** Deterministic pseudo-random value in [0,1) from two numeric seeds (classic sine hash; only
@@ -975,7 +980,7 @@ export class PropManager {
         group.add(cap);
       }
     } else if (d.kind === 'dune') {
-      const width = duneWidth(d.z);
+      const width = duneWidth(d.z, d.x);
       const dune = new THREE.Mesh(this.duneGeo, this.matDune);
       dune.scale.set(width, d.scale, DUNE_DEPTH);
       dune.position.set(d.x, ground, -d.z);
