@@ -4,6 +4,7 @@ import {
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_SMALL, RAMP_BIG, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
 } from '../src/core/track';
 import { zoneAt, ZONES } from '../src/core/zones';
+import type { Segment, Track } from '../src/core/types';
 
 describe('mulberry32', () => {
   it('is deterministic and in [0,1)', () => {
@@ -73,7 +74,9 @@ describe('createTrack', () => {
     const expected10 = Math.round(
       (TRACK_GEN.obstacleBase + Math.floor(z10 / TRACK_GEN.obstaclePerMeters)) * zoneAt(z10).obstacleDensityMul,
     );
-    expect(nonWall(t.getSegment(10))).toBe(expected10);
+    // A route section excludes ordinary obstacles from its span, so a routed segment may fall short.
+    if (t.getSegment(10).route) expect(nonWall(t.getSegment(10))).toBeLessThanOrEqual(expected10);
+    else expect(nonWall(t.getSegment(10))).toBe(expected10);
     expect(nonWall(t.getSegment(40))).toBe(TRACK_GEN.obstacleMax);
   });
 
@@ -115,8 +118,10 @@ describe('createTrack', () => {
     const t = createTrack(11);
     for (let i = 0; i <= 20; i++) {
       const s = t.getSegment(i);
-      const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs'));
-      expect(baseRamps.length).toBeGreaterThanOrEqual(1);
+      const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re'));
+      // A routed segment may have no free ramp at all (the route span excludes them) - it has
+      // the route entry/pillar ramps instead.
+      expect(baseRamps.length).toBeGreaterThanOrEqual(s.route ? 0 : 1);
       expect(baseRamps.length).toBeLessThanOrEqual(2);
       const ids = new Set(s.ramps.map((r) => r.id));
       expect(ids.size).toBe(s.ramps.length);
@@ -133,7 +138,7 @@ describe('createTrack', () => {
       const t = createTrack(seed);
       for (let i = 0; i <= 20; i++) {
         const s = t.getSegment(i);
-        const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs'));
+        const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re'));
         if (baseRamps.length < 2) continue;
         const zs = baseRamps.map((r) => r.z).sort((a, b) => a - b);
         for (let k = 1; k < zs.length; k++) {
@@ -409,7 +414,11 @@ describe('createTrack', () => {
           expect(r.x + r.width / 2).toBeLessThanOrEqual(w / 2 + 1e-9);
           const matchesSmall = r.width === TRACK_GEN.rampWidth;
           const matchesBig = r.width === TRACK_GEN.rampBigWidth;
-          expect(matchesSmall || matchesBig).toBe(true);
+          const matchesRoute = r.width === TRACK_GEN.pillarRampWidth || r.width === TRACK_GEN.routeEntryRampWidth;
+          expect(matchesSmall || matchesBig || matchesRoute).toBe(true);
+          // Route ramps sit on lanes whose neighbours can be higher (ridge); the lane comparison is
+          // covered by the route-section tests instead.
+          if (r.id.includes('-pr') || r.id.endsWith('-re')) continue;
           const mid = r.z + r.length / 2;
           expect(t.heightAt(mid, r.x)).toBeGreaterThan(t.heightAt(mid, r.x + r.width));
         }
@@ -442,6 +451,7 @@ describe('createTrack', () => {
       for (let i = 0; i <= 10; i++) {
         const s = t.getSegment(i);
         for (const r of s.ramps) {
+          if (r.id.includes('-pr')) continue; // pillar ramps carry pillar coins instead of guides
           const guides = s.coins.filter((c) => c.x === r.x && c.z < r.z && c.z >= r.z - TRACK_GEN.rampGuideCoinLead - TRACK_GEN.rampGuideCoins * TRACK_GEN.rampGuideCoinSpacing);
           expect(guides.length).toBeGreaterThanOrEqual(TRACK_GEN.rampGuideCoins);
           found = true;
@@ -484,7 +494,8 @@ describe('createTrack', () => {
     }
   });
 
-  it('split walls sit only at x=0, spaced within the split span', () => {
+  // Superseded by multi-height route sections (routes design, 2026-09-21): splitChance is 0.
+  it.skip('split walls sit only at x=0, spaced within the split span', () => {
     let found = false;
     for (let seed = 1; seed <= 20; seed++) {
       const t = createTrack(seed);
@@ -504,7 +515,8 @@ describe('createTrack', () => {
     expect(found).toBe(true);
   });
 
-  it('both lanes have an obstacle-free x at every wall z inside a split', () => {
+  // Superseded by multi-height route sections (routes design, 2026-09-21): splitChance is 0.
+  it.skip('both lanes have an obstacle-free x at every wall z inside a split', () => {
     let found = false;
     for (let seed = 1; seed <= 20; seed++) {
       const t = createTrack(seed);
@@ -535,7 +547,8 @@ describe('createTrack', () => {
     expect(found).toBe(true);
   });
 
-  it('split puts the ramp and ice on the right (x>0) and coin lines on the left (x<0)', () => {
+  // Superseded by multi-height route sections (routes design, 2026-09-21): splitChance is 0.
+  it.skip('split puts the ramp and ice on the right (x>0) and coin lines on the left (x<0)', () => {
     let found = false;
     for (let seed = 1; seed <= 20; seed++) {
       const t = createTrack(seed);
@@ -700,6 +713,102 @@ describe('zone-aware generation', () => {
         expect(seg.gate!.zone).toBe(zoneAt(seg.z0).id);
       } else {
         expect(seg.gate).toBeNull();
+      }
+    }
+  });
+});
+
+describe('route sections', () => {
+  function findRoute(): { seg: Segment; t: Track } {
+    for (let seed = 1; seed <= 6; seed++) {
+      const t = createTrack(seed);
+      for (let i = 2; i < 40; i++) {
+        const seg = t.getSegment(i);
+        if (seg.route && seg.route.lanes.length === 3) return { seg, t };
+      }
+    }
+    throw new Error('no 3-lane route section found');
+  }
+
+  it('only appears from routeMinZ on and stays inside its segment with margins', () => {
+    for (let seed = 1; seed <= 4; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 40; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.route) continue;
+        expect(seg.z0).toBeGreaterThanOrEqual(TRACK_GEN.routeMinZ);
+        expect(seg.route.z0).toBeGreaterThanOrEqual(seg.z0 + TRACK_GEN.routeMargin - 1e-9);
+        expect(seg.route.z1).toBeLessThanOrEqual(seg.z1 - TRACK_GEN.routeMargin + 1e-9);
+        expect(seg.route.z1 - seg.route.z0).toBeGreaterThanOrEqual(TRACK_GEN.routeLenMin - 1e-9);
+      }
+    }
+  });
+
+  it('lanes partition the track width contiguously and pillars are evenly spaced with ramps on top', () => {
+    const { seg, t } = findRoute();
+    const route = seg.route!;
+    const w = t.widthAt((route.z0 + route.z1) / 2);
+    expect(route.lanes[0].xMin).toBeCloseTo(-w / 2, 6);
+    expect(route.lanes[route.lanes.length - 1].xMax).toBeCloseTo(w / 2, 6);
+    for (let k = 1; k < route.lanes.length; k++) expect(route.lanes[k].xMin).toBeCloseTo(route.lanes[k - 1].xMax, 6);
+    expect(route.pillars.length).toBeGreaterThanOrEqual(2);
+    for (let k = 1; k < route.pillars.length; k++) {
+      expect(route.pillars[k].z - route.pillars[k - 1].z).toBeCloseTo(TRACK_GEN.pillarSpacing, 6);
+      expect(route.pillars[k].id).not.toBe(route.pillars[k - 1].id);
+    }
+    for (const p of route.pillars) {
+      const ramp = seg.ramps.find((r) => r.id.includes('-pr') && Math.abs(r.z - (p.z + TRACK_GEN.pillarRampOffset)) < 1e-6);
+      expect(ramp).toBeDefined();
+      expect(Math.abs(ramp!.x - p.x)).toBeLessThanOrEqual(3);
+      expect(ramp!.width).toBe(TRACK_GEN.pillarRampWidth);
+    }
+    const ridge = route.lanes.find((l) => l.kind === 'ridge')!;
+    const entry = seg.ramps.find((r) => r.id.endsWith('-re'))!;
+    expect(entry.z).toBeCloseTo(route.z0 - TRACK_GEN.routeEntryRampLead, 6);
+    expect(entry.width).toBe(TRACK_GEN.routeEntryRampWidth);
+    expect(Math.abs(entry.x - (ridge.xMin + ridge.xMax) / 2)).toBeLessThanOrEqual(4);
+  });
+
+  it('heightAt reflects each lane: ridge +4, hazard floor -6, pillar top +2, and 0 again at z1', () => {
+    const { seg, t } = findRoute();
+    const route = seg.route!;
+    const zMid = (route.z0 + route.z1) / 2;
+    const centre = (l: { xMin: number; xMax: number }) => (l.xMin + l.xMax) / 2;
+    const ground = route.lanes.find((l) => l.kind === 'ground')!;
+    const ridge = route.lanes.find((l) => l.kind === 'ridge')!;
+    const pillars = route.lanes.find((l) => l.kind === 'pillars')!;
+    const g = t.heightAt(zMid, centre(ground));
+    expect(t.heightAt(zMid, centre(ridge)) - g).toBeCloseTo(TRACK_GEN.ridgeHeight, 3);
+    const p0 = route.pillars[0];
+    const between = p0.z + TRACK_GEN.pillarSpacing / 2;
+    const gBetween = t.heightAt(between, centre(ground));
+    expect(t.heightAt(between, centre(pillars)) - gBetween).toBeCloseTo(-TRACK_GEN.hazardDepth, 3);
+    expect(t.onPillar(p0.z, p0.x)).toBe(true);
+    expect(t.onPillar(between, p0.x)).toBe(false);
+    // Pillar top relative to the ground lane, measured before the pillar ramp begins (p.z + 1).
+    const onTop = p0.z - 2;
+    expect(t.heightAt(onTop, p0.x) - t.heightAt(onTop, centre(ground))).toBeCloseTo(TRACK_GEN.pillarTop, 3);
+    expect(t.heightAt(route.z1, centre(ridge)) - t.heightAt(route.z1, centre(ground))).toBeCloseTo(0, 3);
+    expect(t.laneAt(zMid, centre(ridge))?.kind).toBe('ridge');
+    expect(t.routeAt(zMid)).toBe(route);
+    expect(t.routeAt(route.z0 - 1)).toBeNull();
+  });
+
+  it('keeps ordinary obstacles, pads and coin lines out of the section and its entry ramp', () => {
+    for (let seed = 1; seed <= 4; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 40; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.route) continue;
+        const lo = seg.route.z0 - TRACK_GEN.routeEntryRampLead - TRACK_GEN.rampExclusionBefore;
+        const hi = seg.route.z1 + TRACK_GEN.rampExclusionAfter;
+        for (const o of seg.obstacles) expect(o.z < lo || o.z > hi).toBe(true);
+        for (const b of seg.boosts) expect(b.z + b.length < lo || b.z > hi).toBe(true);
+        for (const c of seg.coins) {
+          if (/-l\d+-/.test(c.id)) expect(c.z < lo || c.z > hi).toBe(true);
+        }
+        for (const d of seg.drops) expect(d.z + d.length < lo || d.z - RAMP_BIG.length > hi).toBe(true);
+        for (const p of seg.pipes) expect(p.z1 < lo || p.z0 > hi).toBe(true);
       }
     }
   });

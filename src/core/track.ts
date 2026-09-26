@@ -1,5 +1,5 @@
 import type {
-  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Lane, Obstacle, ObstacleKind, Ramp, RouteSection, Segment, Surface,
+  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Lane, LaneKind, Obstacle, ObstacleKind, Pillar, Ramp, RouteSection, Segment, Surface,
   Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
@@ -58,7 +58,7 @@ export const TRACK_GEN = {
   widthMin: 20, widthMax: 36,
   /** Two-lane split sections: a centre wall (kind 'wall', x=0, every splitWallSpacing) divides
    * the track into a left lane (coins) and a right lane (a small ramp + ice). */
-  splitChance: 0.3, splitMinZ: 300, splitLenMin: 60, splitLenRange: 60,
+  splitChance: 0, splitMinZ: 300, splitLenMin: 60, splitLenRange: 60,
   splitGapHalf: 3, splitWallSpacing: 6,
   /** Margin (m) kept between a split span and its segment's own z0/z1 when choosing where to
    * place it. */
@@ -73,6 +73,16 @@ export const TRACK_GEN = {
   /** Margin (m) kept between a pipe span and its segment's own z0/z1 when choosing where to
    * place it. */
   pipeMargin: 20,
+  /** Multi-height route sections (routes §1): lanes at different heights (ridge +ridgeHeight,
+   * ground 0, pillars over a hazard floor at -hazardDepth with pillar tops at +pillarTop).
+   * The entry is a routeEntryStep-metre step (a wall from the front); the exit blends back to 0
+   * over routeExitBlend metres. A big entry ramp sits routeEntryRampLead before the section at
+   * the ridge lane's centre. */
+  routeChance: 0.4, routeMinZ: 400, routeLenMin: 100, routeLenRange: 60, routeMargin: 20,
+  ridgeHeight: 4, hazardDepth: 6, pillarTop: 2, pillarRadius: 5, pillarSpacing: 28, pillarFirstOffset: 6,
+  routeEntryStep: 1, routeExitBlend: 12, routeEntryRampLead: 22, routeEntryRampWidth: 8,
+  pillarRampWidth: 5, pillarRampOffset: 1, ridgeCoinMul: 3, ridgeCoinSpacing: 1.5, pillarCoins: 3, pillarCoinSpacing: 1.5,
+  narrowLayoutWidth: 24,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -162,8 +172,41 @@ function pipeHeight(p: Segment['pipes'][number], z: number, x: number, halfWidth
   return p.wallHeight * (x / halfWidth) ** 2 * blend;
 }
 
+/** Lane containing x (clamped to the nearest lane outside the partition). */
+function laneFor(route: RouteSection, x: number): Lane {
+  for (const lane of route.lanes) if (x >= lane.xMin && x <= lane.xMax) return lane;
+  const first = route.lanes[0];
+  return x < first.xMin ? first : route.lanes[route.lanes.length - 1];
+}
+
+function pillarAt(route: RouteSection, z: number, x: number): Pillar | null {
+  for (const p of route.pillars) {
+    const dx = x - p.x;
+    const dz = z - p.z;
+    if (dx * dx + dz * dz <= p.radius * p.radius) return p;
+  }
+  return null;
+}
+
+/** Route-section height contribution: the lane's yOffset (pillars lane: the hazard floor, or the
+ * pillar top when over a pillar), stepping up over routeEntryStep at z0 and blending back to 0
+ * over routeExitBlend before z1. */
+function routeHeight(route: RouteSection, z: number, x: number): number {
+  if (z < route.z0 || z > route.z1 || route.lanes.length === 0) return 0;
+  const lane = laneFor(route, x);
+  let off = lane.yOffset;
+  if (lane.kind === 'pillars') {
+    const pillar = pillarAt(route, z, x);
+    off = pillar ? pillar.yOffset : lane.yOffset;
+  }
+  const entry = Math.min(1, Math.max(0, (z - route.z0) / TRACK_GEN.routeEntryStep));
+  const exit = 1 - Math.min(1, Math.max(0, (z - (route.z1 - TRACK_GEN.routeExitBlend)) / TRACK_GEN.routeExitBlend));
+  return off * entry * exit;
+}
+
 function localHeight(seg: Segment, z: number, x: number): number {
   let h = 0;
+  if (seg.route) h += routeHeight(seg.route, z, x);
   for (const b of seg.bumps) h += bumpHeight(b, z);
   for (const r of seg.ramps) h += rampHeight(r, z, x);
   if (seg.pipes.length > 0) {
@@ -221,6 +264,71 @@ function generateSegment(seed: number, index: number): Segment {
     ice.push({ z0: start, z1: start + len });
   }
 
+  // Multi-height route sections (routes §1). Own salted rng stream, decided BEFORE ramps, drops
+  // and pipes so those features avoid the route span (a section plus its entry ramp fills most
+  // of a segment, so rejecting the route on overlap instead would almost never place one).
+  // Pillar ramps and the entry ramp are collected in routeRamps and pushed to `ramps` once that
+  // array exists (they boost like any ramp) with distinct id prefixes (-pr / -re) so the tests'
+  // ramp-count/gap rules can tell them apart from the segment's own 1-2 ramps.
+  const routeRng = mulberry32(hashSeed(seed, index) ^ 0x7f4a7c15);
+  let route: RouteSection | null = null;
+  const routeRamps: Ramp[] = [];
+  if (z0 >= TRACK_GEN.routeMinZ && routeRng() < TRACK_GEN.routeChance) {
+    const length = TRACK_GEN.routeLenMin + routeRng() * TRACK_GEN.routeLenRange;
+    const lo = z0 + TRACK_GEN.routeMargin;
+    const hi = z1 - TRACK_GEN.routeMargin - length;
+    const layoutDraw = routeRng();
+    if (hi > lo) {
+      const rz0 = lo + routeRng() * (hi - lo);
+      const rz1 = rz0 + length;
+      {
+        const w = widthAt((rz0 + rz1) / 2);
+        const kinds: LaneKind[] = w < TRACK_GEN.narrowLayoutWidth
+          ? ['ridge', 'ground']
+          : layoutDraw < 0.5 ? ['ridge', 'ground', 'pillars'] : ['ground', 'pillars', 'ridge'];
+        const laneW = w / kinds.length;
+        const lanes: Lane[] = kinds.map((kind, k) => ({
+          xMin: -w / 2 + k * laneW,
+          xMax: -w / 2 + (k + 1) * laneW,
+          yOffset: kind === 'ridge' ? TRACK_GEN.ridgeHeight : kind === 'pillars' ? -TRACK_GEN.hazardDepth : 0,
+          kind,
+        }));
+        const pillars: Pillar[] = [];
+        const pillarLane = lanes.find((l) => l.kind === 'pillars');
+        if (pillarLane) {
+          const laneCentre = (pillarLane.xMin + pillarLane.xMax) / 2;
+          let k = 0;
+          for (let pz = rz0 + TRACK_GEN.pillarFirstOffset; pz + TRACK_GEN.pillarRadius <= rz1 - TRACK_GEN.routeExitBlend; pz += TRACK_GEN.pillarSpacing) {
+            const px = laneCentre;
+            const rampHalf = TRACK_GEN.pillarRampWidth / 2 + 1;
+            const rx = Math.max(-widthAt(pz) / 2 + rampHalf, Math.min(widthAt(pz) / 2 - rampHalf, px));
+            pillars.push({ id: `${index}-p${k}`, x: px, z: pz, radius: TRACK_GEN.pillarRadius, yOffset: TRACK_GEN.pillarTop });
+            routeRamps.push({
+              id: `${index}-pr${k}`, z: pz + TRACK_GEN.pillarRampOffset, length: RAMP_SMALL.length, height: RAMP_SMALL.height,
+              x: rx, width: TRACK_GEN.pillarRampWidth,
+            });
+            k++;
+          }
+        }
+        const ridgeLane = lanes.find((l) => l.kind === 'ridge');
+        if (ridgeLane) {
+          const ez = rz0 - TRACK_GEN.routeEntryRampLead;
+          // Keep the plank inside the (possibly narrower) track at its own z.
+          const entryHalf = TRACK_GEN.routeEntryRampWidth / 2 + 1;
+          const ex = Math.max(-widthAt(ez) / 2 + entryHalf, Math.min(widthAt(ez) / 2 - entryHalf, (ridgeLane.xMin + ridgeLane.xMax) / 2));
+          routeRamps.push({
+            id: `${index}-re`, z: ez, length: RAMP_BIG.length, height: RAMP_BIG.height,
+            x: ex, width: TRACK_GEN.routeEntryRampWidth,
+          });
+        }
+        route = { z0: rz0, z1: rz1, lanes, pillars, hazard: zone.id === 'volcano' ? 'lava' : 'chasm' };
+      }
+    }
+  }
+  const inRouteSpan = (z: number): boolean => route !== null
+    && z >= route.z0 - TRACK_GEN.routeEntryRampLead - TRACK_GEN.rampExclusionBefore
+    && z <= route.z1 + TRACK_GEN.rampExclusionAfter;
+
   // Ramps and drops. A drop's companion big ramp (added first, if a drop is rolled) counts
   // toward the segment's 1-2 ramps; any further ramps are drawn small/big at rampBigChance and
   // kept at least rampMinGap apart from every ramp already placed (including the drop's).
@@ -236,16 +344,17 @@ function generateSegment(seed: number, index: number): Segment {
     return lo + rampXRng() * (hi - lo);
   };
 
-  const ramps: Ramp[] = [];
+  const ramps: Ramp[] = [...routeRamps];
   const drops: Drop[] = [];
   let rampCounter = 0;
   if (z0 >= TRACK_GEN.dropMinZ && rng() < TRACK_GEN.dropChance) {
     const dz = z0 + TRACK_GEN.dropStartMargin
       + rng() * (SEGMENT_LENGTH - TRACK_GEN.dropStartMargin - TRACK_GEN.dropEndMargin);
     const depth = TRACK_GEN.dropDepthMin + rng() * TRACK_GEN.dropDepthRange;
-    drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
+    const dropClearOfRoute = !inRouteSpan(dz - RAMP_BIG.length) && !inRouteSpan(dz + TRACK_GEN.dropLength);
+    if (dropClearOfRoute) drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
     // Big drop ramps are centred (x=0) so the drop line-up is fair regardless of who's aiming.
-    ramps.push({
+    if (dropClearOfRoute) ramps.push({
       id: `${index}-r${rampCounter++}`, z: dz - RAMP_BIG.length, length: RAMP_BIG.length, height: RAMP_BIG.height,
       x: 0, width: TRACK_GEN.rampBigWidth,
     });
@@ -253,11 +362,13 @@ function generateSegment(seed: number, index: number): Segment {
   const rampCount = TRACK_GEN.rampMin + Math.floor(rng() * TRACK_GEN.rampRange);
   const rampSpanLo = z0 + TRACK_GEN.rampStartMargin;
   const rampSpanHi = z1 - TRACK_GEN.rampEndMargin;
-  for (let attempt = 0; ramps.length < rampCount && attempt < TRACK_GEN.rampPlacementAttempts; attempt++) {
+  const routeRampCount = routeRamps.length;
+  for (let attempt = 0; ramps.length - routeRampCount < rampCount && attempt < TRACK_GEN.rampPlacementAttempts; attempt++) {
     const big = rng() < TRACK_GEN.rampBigChance;
     const template = big ? RAMP_BIG : RAMP_SMALL;
     const rz = rampSpanLo + rng() * (rampSpanHi - rampSpanLo);
     if (ramps.some((r) => Math.abs(rz - r.z) < TRACK_GEN.rampMinGap)) continue;
+    if (inRouteSpan(rz) || inRouteSpan(rz + template.length)) continue;
     const width = big ? TRACK_GEN.rampBigWidth : TRACK_GEN.rampWidth;
     ramps.push({
       id: `${index}-r${rampCounter++}`, z: rz, length: template.length, height: template.height,
@@ -327,7 +438,8 @@ function generateSegment(seed: number, index: number): Segment {
           && pz1 > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore,
       );
       const overlapsSplit = split !== null && pz0 < split.z1 && pz1 > split.z0;
-      if (!overlapsRamp && !overlapsDrop && !overlapsSplit) {
+      const overlapsRoute = inRouteSpan(pz0) || inRouteSpan(pz1) || (route !== null && pz0 < route.z0 && pz1 > route.z1);
+      if (!overlapsRamp && !overlapsDrop && !overlapsSplit && !overlapsRoute) {
         pipes.push({ z0: pz0, z1: pz1, wallHeight: TRACK_GEN.pipeWallHeight });
       }
     }
@@ -357,6 +469,7 @@ function generateSegment(seed: number, index: number): Segment {
     if (z < TRACK_GEN.boostFirstZ) return;
     if (overlapsRamp(z)) return;
     if (overlapsDrop(z)) return;
+    if (inRouteSpan(z) || inRouteSpan(z + boostLength)) return;
     if (boosts.some((b) => z < b.z + b.length && z + boostLength > b.z)) return;
     const w = widthAt(z);
     const xMin = -w / 2 + boostWidth / 2 + 1;
@@ -416,6 +529,7 @@ function generateSegment(seed: number, index: number): Segment {
     if (split && z >= split.z0 && z <= split.z1 && Math.abs(x) < split.gapHalf + 2) continue;
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (drops.some((d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter)) continue;
+    if (inRouteSpan(z)) continue;
     const r = OBSTACLE_RADIUS[kind];
     if (boosts.some((b) => Math.abs(x - b.x) < b.width / 2 + r && z >= b.z - r && z <= b.z + b.length + r)) continue;
     obstacles.push({ id: `${index}-o${obstacles.length}`, kind, x, z, r });
@@ -437,11 +551,12 @@ function generateSegment(seed: number, index: number): Segment {
     const x = (rng() * 2 - 1) * (widthAt(startZ) / 2 - TRACK_GEN.coinXMargin);
     for (let k = 0; k < n; k++) {
       const z = startZ + k * TRACK_GEN.coinSpacing;
-      if (inDropSpan(z)) continue;
+      if (inDropSpan(z) || inRouteSpan(z)) continue;
       coins.push({ id: `${index}-l${line}-${k}`, x, z, lift: 0 });
     }
   }
   ramps.forEach((r, rampIdx) => {
+    if (r.id.includes('-pr')) return;
     for (let k = 0; k < TRACK_GEN.archCoins; k++) {
       coins.push({
         id: `${index}-a${rampIdx}-${k}`,
@@ -455,6 +570,7 @@ function generateSegment(seed: number, index: number): Segment {
   // aim so they land on the plank instead of skidding past it.
   let guideCount = 0;
   for (const r of ramps) {
+    if (r.id.includes('-pr')) continue;
     for (let k = 0; k < TRACK_GEN.rampGuideCoins; k++) {
       coins.push({
         id: `${index}-g${guideCount++}`,
@@ -476,6 +592,27 @@ function generateSegment(seed: number, index: number): Segment {
         coins.push({ id: `${index}-sc${splitCoinCount++}`, x: leftX, z: lineStart + k * TRACK_GEN.coinSpacing, lift: 0 });
       }
     }
+  }
+
+  // Route rewards: a dense coin line along the ridge lane (ridgeCoinMul x a normal line) and
+  // pillarCoins on every pillar top. Deterministic (no rng), so nothing after this shifts.
+  if (route) {
+    const ridge = route.lanes.find((l) => l.kind === 'ridge');
+    if (ridge) {
+      const rx = (ridge.xMin + ridge.xMax) / 2;
+      const n = TRACK_GEN.ridgeCoinMul * TRACK_GEN.coinsPerLineMin;
+      const start = route.z0 + TRACK_GEN.routeEntryStep + 2;
+      for (let k = 0; k < n; k++) {
+        const z = start + k * TRACK_GEN.ridgeCoinSpacing;
+        if (z > route.z1 - TRACK_GEN.routeExitBlend) break;
+        coins.push({ id: `${index}-rc${k}`, x: rx, z, lift: 0 });
+      }
+    }
+    route.pillars.forEach((p, pi) => {
+      for (let k = 0; k < TRACK_GEN.pillarCoins; k++) {
+        coins.push({ id: `${index}-pc${pi}-${k}`, x: p.x, z: p.z - (k - 1) * TRACK_GEN.pillarCoinSpacing - TRACK_GEN.pillarRadius / 2, lift: 0 });
+      }
+    });
   }
 
   const gate: Gate | null = zone.z0 === z0 && zone.z0 > 0 ? { z: z0, zone: zone.id } : null;
@@ -557,7 +694,7 @@ function generateSegment(seed: number, index: number): Segment {
 
   return {
     index, z0, z1, widthStart, widthEnd, split, pipes, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
-    zone: zone.id, gate, decor, route: null,
+    zone: zone.id, gate, decor, route,
   };
 }
 
@@ -655,7 +792,8 @@ export function createTrack(seed: number): Track {
    * never crosses a segment boundary (routeMargin keeps it inside its segment). */
   const routeAt = (z: number): RouteSection | null => {
     if (z < 0) return null;
-    return getSegment(segmentIndexAt(z)).route;
+    const route = getSegment(segmentIndexAt(z)).route;
+    return route && z >= route.z0 && z <= route.z1 ? route : null;
   };
 
   /** The lane containing (z, x), clamped to the nearest lane when x falls (by floating-point
