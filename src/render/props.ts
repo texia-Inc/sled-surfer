@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Decor, Gate, Lane, RouteSection, Segment, Track, ZoneId } from '../core/types';
+import type { Decor, Gate, Lane, RouteSection, Segment, Slider, Track, ZoneId } from '../core/types';
 import type { PhysicsParams } from '../core/params';
 import { coinWorldY } from '../core/physics';
 import { RAMP_BIG, RAMP_SMALL, TRACK_GEN, TRACK_WIDTH } from '../core/track';
@@ -83,6 +83,27 @@ const STALAGMITE_RADIUS = 0.7;
 const STALAGMITE_HEIGHT = 2.4;
 const CRYSTAL_RADIUS = 0.8;
 
+// --- Desert/space obstacle geometry constants (art §5) ---
+const CACTUS_TRUNK_RADIUS = 0.35;
+const CACTUS_TRUNK_HEIGHT = 2.4;
+const CACTUS_ARM_RADIUS = 0.22;
+const CACTUS_ARM_HEIGHT = 1.1;
+/** Offset of each arm's centre from the trunk, in x. */
+const CACTUS_ARM_X = 0.6;
+const CACTUS_ARM_Y = 1.2;
+/** Rotation (radians) tilting each arm up away from vertical. */
+const CACTUS_ARM_TILT = 0.5;
+const CACTUS_COLOR = 0x3f8f4a;
+const ASTEROID_RADIUS = 1.0;
+/** Fraction (+-) each dodecahedron vertex is scaled radially, for a deterministic rocky look. */
+const ASTEROID_JITTER = 0.25;
+const ASTEROID_COLOR = 0x6f6f78;
+const ASTEROID_Y = 0.8;
+const SATELLITE_BODY = { w: 1.0, h: 0.8, d: 0.8 };
+const SATELLITE_PANEL = { w: 1.6, h: 0.05, d: 0.8 };
+const SATELLITE_BODY_COLOR = 0xcfd3dc;
+const SATELLITE_PANEL_COLOR = 0x2e6bd8;
+
 // --- Volcano obstacle geometry constants ---
 const TOTEM_RADIUS = 0.6;
 const TOTEM_HEIGHT = 2.6;
@@ -129,22 +150,52 @@ const CLIFF_Y_SINK = 2;
 /** Deterministic 10-18m cliff width, derived from `d.z`. */
 const CLIFF_WIDTH_MIN = 10;
 const CLIFF_WIDTH_RANGE = 8;
-const CLIFF_DEPTH = 14;
-/** Smaller top box stacked on the cliff to break its silhouette. */
-const CLIFF_TOP_WIDTH_SCALE = 0.6;
-const CLIFF_TOP_HEIGHT_SCALE = 0.55;
-const CLIFF_TOP_Z_OFFSET = 2;
+/** 6-sided cone (art §5): a low radial-segment count so the peak reads as faceted rock. */
+const CLIFF_CONE_SEGMENTS = 6;
+/** Max per-vertex x/z jitter on the cliff cone, as a fraction of its radius. */
+const CLIFF_JITTER_FRACTION = 0.15;
+const CLIFF_CAP_RADIUS_SCALE = 0.45;
+const CLIFF_CAP_HEIGHT_SCALE = 0.3;
+const CLIFF_CAP_COLOR = 0xf4f8ff;
 const CLIFF_COLORS: Record<ZoneId, number> = {
   snowfield: 0xe6eef7, forest: 0x7a5a3c, city: 0x7d8189, cave: 0x1e2438, volcano: 0x14100f, desert: 0xc98a3e, space: 0x2a3350,
 };
 
-// --- Gate geometry constants ---
-const GATE_POST_RADIUS = 0.25;
-const GATE_POST_HEIGHT = 5;
-const GATE_POST_X_OFFSET = 0.5;
-const GATE_BANNER_HEIGHT = 1.2;
-const GATE_BANNER_DEPTH = 0.3;
-const GATE_BANNER_Y = 5;
+// --- Desert decor geometry constants (art §5; dune/pyramid) ---
+/** Deterministic 60-120m dune width, derived from `d.z` (same style as cliffWidth). */
+const DUNE_WIDTH_MIN = 60;
+const DUNE_WIDTH_RANGE = 60;
+const DUNE_DEPTH = 40;
+const DUNE_COLOR = 0xc98a3e;
+const PYRAMID_RADIUS_SCALE = 0.75;
+const PYRAMID_COLOR = 0xd9a35a;
+
+// --- Portal gate geometry constants (art §5; replaces the old posts/banner gate) ---
+const GATE_RING_COUNT = 16;
+const GATE_RING_RADIUS = 7;
+const GATE_RING_BOX = { w: 2.2, h: 2.2, d: 1.2 };
+const GATE_RING_COLOR = 0xbfe6ff;
+/** Height of the ring's centre above ground. */
+const GATE_RING_CENTER_Y = 7.5;
+const GATE_DISC_RADIUS = 6.2;
+const GATE_DISC_SEGMENTS = 32;
+const GATE_DISC_OPACITY = 0.35;
+/** Clearance between the ring's top and the zone-name label above it. */
+const GATE_NAME_CLEARANCE = 2;
+
+// --- Slider rail geometry constants (art §5) ---
+const SLIDER_RAIL_SAMPLE = 4;
+const SLIDER_RAIL_Y_OFFSET = 0.5;
+const SLIDER_RAIL_RADIUS = 0.35;
+const SLIDER_RAIL_RADIAL_SEGMENTS = 6;
+const SLIDER_RAIL_COLOR = 0x1b1b22;
+
+// --- Space tube pipe geometry constants (art §5) ---
+const SPACE_PIPE_RADIAL_SEGMENTS = 24;
+const SPACE_PIPE_COLOR = 0xbfe6ff;
+const SPACE_PIPE_OPACITY = 0.25;
+
+// --- Gate name-label geometry constants (the ring itself is defined above, art §5) ---
 const GATE_NAME_W = 512;
 const GATE_NAME_H = 96;
 const GATE_NAME_PLANE_H = 1.1;
@@ -177,10 +228,54 @@ function cliffWidth(z: number): number {
   return CLIFF_WIDTH_MIN + ((z * 7) % CLIFF_WIDTH_RANGE);
 }
 
+/** Deterministic 60-120m width for a dune, derived from its z (same style as cliffWidth). */
+function duneWidth(z: number): number {
+  return DUNE_WIDTH_MIN + ((z * 7) % DUNE_WIDTH_RANGE);
+}
+
+/** Deterministic pseudo-random value in [0,1) from two numeric seeds (classic sine hash; only
+ * good enough for small cosmetic vertex jitter, never for anything needing real randomness). */
+function hash01(a: number, b: number): number {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/** Displaces every vertex of a geometry in x/z by up to `maxOffset` (world units), deterministic
+ * from `seed` and the vertex index, then recomputes normals so a cone reads as a rough, faceted
+ * peak instead of a perfect cone (cliffs, art §5). Mutates and disposes nothing; the caller owns
+ * the geometry's lifetime. */
+function jitterConeXZ(geo: THREE.BufferGeometry, seed: number, maxOffset: number): void {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setX(i, pos.getX(i) + (hash01(seed, i * 2) * 2 - 1) * maxOffset);
+    pos.setZ(i, pos.getZ(i) + (hash01(seed, i * 2 + 1) * 2 - 1) * maxOffset);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+}
+
+/** Scales every vertex of a geometry radially (from the origin) by up to +-`fraction`,
+ * deterministic from `seed` and the vertex index, then recomputes normals, so a dodecahedron
+ * reads as an irregular chunk of rock (asteroids, art §5). */
+function jitterRadial(geo: THREE.BufferGeometry, seed: number, fraction: number): void {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const f = 1 + (hash01(seed, i) * 2 - 1) * fraction;
+    pos.setX(i, pos.getX(i) * f);
+    pos.setY(i, pos.getY(i) * f);
+    pos.setZ(i, pos.getZ(i) * f);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+}
+
 interface Bundle {
   group: THREE.Group;
   coins: Map<string, THREE.Mesh>;
   obstacles: Map<string, THREE.Object3D>;
+  /** Per-instance (non-shared) geometries created for this segment's props (jittered cliffs and
+   * asteroids, slider rail tubes), disposed alongside the group when it's recycled. */
+  disposables: THREE.BufferGeometry[];
 }
 
 export class PropManager {
@@ -219,6 +314,12 @@ export class PropManager {
   private readonly stalagmiteGeo = new THREE.ConeGeometry(STALAGMITE_RADIUS, STALAGMITE_HEIGHT, 7);
   private readonly crystalGeo = new THREE.OctahedronGeometry(CRYSTAL_RADIUS, 0);
 
+  // --- Desert/space obstacle geometries (asteroid is per-instance jittered, see buildAsteroid) ---
+  private readonly cactusTrunkGeo = new THREE.CylinderGeometry(CACTUS_TRUNK_RADIUS, CACTUS_TRUNK_RADIUS, CACTUS_TRUNK_HEIGHT, 8);
+  private readonly cactusArmGeo = new THREE.CylinderGeometry(CACTUS_ARM_RADIUS, CACTUS_ARM_RADIUS, CACTUS_ARM_HEIGHT, 8);
+  private readonly satelliteBodyGeo = new THREE.BoxGeometry(SATELLITE_BODY.w, SATELLITE_BODY.h, SATELLITE_BODY.d);
+  private readonly satellitePanelGeo = new THREE.BoxGeometry(SATELLITE_PANEL.w, SATELLITE_PANEL.h, SATELLITE_PANEL.d);
+
   // --- Volcano obstacle/decor geometries ---
   private readonly totemGeo = new THREE.CylinderGeometry(TOTEM_RADIUS, TOTEM_RADIUS, TOTEM_HEIGHT, 8);
   private readonly totemFaceGeo = new THREE.BoxGeometry(TOTEM_FACE_SIZE.w, TOTEM_FACE_SIZE.h, TOTEM_FACE_SIZE.d);
@@ -253,12 +354,23 @@ export class PropManager {
   private readonly buildingGeo = new THREE.BoxGeometry(BUILDING_SIZE.w, 1, BUILDING_SIZE.d);
   private readonly buildingRoofGeo = new THREE.BoxGeometry(BUILDING_ROOF.w, BUILDING_ROOF.h, BUILDING_ROOF.d);
   private readonly stalactiteGeo = new THREE.ConeGeometry(STALACTITE_RADIUS, STALACTITE_HEIGHT, 7);
-  private readonly cliffGeo = new THREE.BoxGeometry(1, 1, 1);
+  /** Unit cone (radius 1, height 1); each cliff's snow cap is scaled per-instance since it isn't
+   * jittered (unlike the cliff body, which needs a unique per-instance geometry anyway). */
+  private readonly cliffCapGeo = new THREE.ConeGeometry(1, 1, CLIFF_CONE_SEGMENTS);
+  /** Unit sphere for dunes (scaled per-instance to a 60-120m width, d.scale height, 40m depth). */
+  private readonly duneGeo = new THREE.SphereGeometry(1, 10, 6);
+  /** Unit cone (radius 1, height 1) for pyramids, scaled per-instance to scale*0.75 / scale. */
+  private readonly pyramidGeo = new THREE.ConeGeometry(1, 1, 4);
 
-  // --- Gate geometries ---
-  private readonly gatePostGeo = new THREE.CylinderGeometry(GATE_POST_RADIUS, GATE_POST_RADIUS, GATE_POST_HEIGHT, 8);
-  private readonly gateBannerGeo = new THREE.BoxGeometry(TRACK_WIDTH + 1, GATE_BANNER_HEIGHT, GATE_BANNER_DEPTH);
+  // --- Gate geometries (portal ring, art §5) ---
+  private readonly gateRingBoxGeo = new THREE.BoxGeometry(GATE_RING_BOX.w, GATE_RING_BOX.h, GATE_RING_BOX.d);
+  private readonly gateDiscGeo = new THREE.CircleGeometry(GATE_DISC_RADIUS, GATE_DISC_SEGMENTS);
   private readonly gateNameGeo = new THREE.PlaneGeometry(TRACK_WIDTH, GATE_NAME_PLANE_H);
+
+  /** Unit cylinder (radius 1, height 1, open-ended) for space-zone tube pipes; scaled per-instance
+   * to (radius, length, radius) since both radius and length vary per pipe (art §5). Slider rails
+   * use TubeGeometry instead, built per-instance since each rail follows its own curve. */
+  private readonly spacePipeGeo = new THREE.CylinderGeometry(1, 1, 1, SPACE_PIPE_RADIAL_SEGMENTS, 1, true);
 
   // --- Finish gate geometries ---
   private readonly goalPostGeo = new THREE.CylinderGeometry(GOAL_POST_RADIUS, GOAL_POST_RADIUS, GOAL_POST_HEIGHT, 8);
@@ -306,6 +418,12 @@ export class PropManager {
   private readonly matStalagmite = new THREE.MeshLambertMaterial({ color: 0x5c6b7a, flatShading: true });
   private readonly matCrystal = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
 
+  // --- Desert/space obstacle materials ---
+  private readonly matCactus = new THREE.MeshLambertMaterial({ color: CACTUS_COLOR, flatShading: true });
+  private readonly matAsteroid = new THREE.MeshLambertMaterial({ color: ASTEROID_COLOR, flatShading: true });
+  private readonly matSatelliteBody = new THREE.MeshLambertMaterial({ color: SATELLITE_BODY_COLOR, flatShading: true });
+  private readonly matSatellitePanel = new THREE.MeshLambertMaterial({ color: SATELLITE_PANEL_COLOR, flatShading: true });
+
   // --- Volcano obstacle/decor materials ---
   private readonly matTotem = new THREE.MeshLambertMaterial({ color: TOTEM_COLOR, flatShading: true });
   private readonly matTotemFace = new THREE.MeshLambertMaterial({ color: TOTEM_FACE_COLOR, flatShading: true });
@@ -336,13 +454,25 @@ export class PropManager {
   private readonly matCliff = new Map<ZoneId, THREE.MeshLambertMaterial>(
     ZONES.map((z) => [z.id, new THREE.MeshLambertMaterial({ color: CLIFF_COLORS[z.id], flatShading: true })]),
   );
+  private readonly matCliffCap = new THREE.MeshLambertMaterial({ color: CLIFF_CAP_COLOR, flatShading: true });
+  private readonly matDune = new THREE.MeshLambertMaterial({ color: DUNE_COLOR, flatShading: true });
+  private readonly matPyramid = new THREE.MeshLambertMaterial({ color: PYRAMID_COLOR, flatShading: true });
 
-  // --- Gate materials (one per zone, keyed by the zone the gate leads into) ---
-  private readonly matGatePost = new THREE.MeshLambertMaterial({ color: 0xdedede, flatShading: true });
-  private readonly matGateBanner = new Map<ZoneId, THREE.MeshLambertMaterial>(
-    ZONES.map((z) => [z.id, new THREE.MeshLambertMaterial({ color: ZONE_THEMES[z.id].gate, flatShading: true })]),
+  // --- Gate materials (ring is one shared colour; the inside disc is per-zone, art §5) ---
+  private readonly matGateRing = new THREE.MeshLambertMaterial({ color: GATE_RING_COLOR, flatShading: true });
+  private readonly matGateDisc = new Map<ZoneId, THREE.MeshBasicMaterial>(
+    ZONES.map((z) => [z.id, new THREE.MeshBasicMaterial({
+      color: ZONE_THEMES[z.id].gate, transparent: true, opacity: GATE_DISC_OPACITY,
+      depthWrite: false, side: THREE.DoubleSide,
+    })]),
   );
   private readonly gateNameMaterials = new Map<ZoneId, THREE.MeshBasicMaterial>();
+
+  // --- Slider rail / space pipe materials (art §5) ---
+  private readonly matSliderRail = new THREE.MeshLambertMaterial({ color: SLIDER_RAIL_COLOR, flatShading: true });
+  private readonly matSpacePipe = new THREE.MeshLambertMaterial({
+    color: SPACE_PIPE_COLOR, transparent: true, opacity: SPACE_PIPE_OPACITY, depthWrite: false, side: THREE.DoubleSide,
+  });
 
   // --- Finish gate materials ---
   private readonly matGoalPost = new THREE.MeshLambertMaterial({ color: GOAL_POST_COLOR, flatShading: true });
@@ -437,6 +567,7 @@ export class PropManager {
     for (const [index, b] of this.bundles) {
       if (!wanted.has(index)) {
         this.scene.remove(b.group);
+        for (const geo of b.disposables) geo.dispose();
         this.bundles.delete(index);
       }
     }
@@ -459,7 +590,10 @@ export class PropManager {
   }
 
   dispose(): void {
-    for (const b of this.bundles.values()) this.scene.remove(b.group);
+    for (const b of this.bundles.values()) {
+      this.scene.remove(b.group);
+      for (const geo of b.disposables) geo.dispose();
+    }
     this.bundles.clear();
   }
 
@@ -467,6 +601,7 @@ export class PropManager {
     const group = new THREE.Group();
     const coins = new Map<string, THREE.Mesh>();
     const obstacles = new Map<string, THREE.Object3D>();
+    const disposables: THREE.BufferGeometry[] = [];
 
     for (const o of seg.obstacles) {
       const y = this.track.heightAt(o.z);
@@ -546,6 +681,35 @@ export class PropManager {
         holder.add(this.buildTotemMesh());
       } else if (o.kind === 'palm') {
         holder.add(this.buildPalmMesh());
+      } else if (o.kind === 'cactus') {
+        const trunk = new THREE.Mesh(this.cactusTrunkGeo, this.matCactus);
+        trunk.position.y = CACTUS_TRUNK_HEIGHT / 2;
+        holder.add(trunk);
+        for (const side of [1, -1]) {
+          const arm = new THREE.Mesh(this.cactusArmGeo, this.matCactus);
+          arm.position.set(side * CACTUS_ARM_X, CACTUS_ARM_Y, 0);
+          arm.rotation.z = -side * CACTUS_ARM_TILT;
+          holder.add(arm);
+        }
+      } else if (o.kind === 'asteroid') {
+        // Per-instance jittered geometry (disposed with the segment, unlike the other obstacle
+        // geometries, which are fixed shared shapes).
+        const geo = new THREE.DodecahedronGeometry(ASTEROID_RADIUS, 0);
+        jitterRadial(geo, o.z, ASTEROID_JITTER);
+        const asteroid = new THREE.Mesh(geo, this.matAsteroid);
+        asteroid.position.y = ASTEROID_Y;
+        asteroid.rotation.set(0.3, o.z, 0.2);
+        holder.add(asteroid);
+        disposables.push(geo);
+      } else if (o.kind === 'satellite') {
+        const body = new THREE.Mesh(this.satelliteBodyGeo, this.matSatelliteBody);
+        body.position.y = SATELLITE_BODY.h / 2;
+        holder.add(body);
+        for (const side of [1, -1]) {
+          const panel = new THREE.Mesh(this.satellitePanelGeo, this.matSatellitePanel);
+          panel.position.set(side * (SATELLITE_BODY.w / 2 + SATELLITE_PANEL.w / 2), body.position.y, 0);
+          holder.add(panel);
+        }
       } else {
         const base = new THREE.Mesh(this.ball, this.matSnow);
         base.position.y = 0.5;
@@ -623,11 +787,48 @@ export class PropManager {
       group.add(beaconCross);
     }
 
-    for (const d of seg.decor) this.buildDecor(group, d, seg.zone);
+    for (const d of seg.decor) this.buildDecor(group, d, seg.zone, disposables);
     if (seg.gate) this.buildGate(group, seg.gate);
     if (seg.route) this.buildRoute(group, seg.route);
+    if (seg.slider) this.buildSlider(group, seg.slider, disposables);
+    if (seg.zone === 'space') this.buildSpacePipes(group, seg);
 
-    return { group, coins, obstacles };
+    return { group, coins, obstacles, disposables };
+  }
+
+  /** Two dark rail tubes running the length of a slider section, one at each edge (art §5). Each
+   * curve is unique per instance, so the TubeGeometry is per-instance and must be disposed with
+   * the segment (unlike the shared/scaled geometries used elsewhere in this file). */
+  private buildSlider(group: THREE.Group, slider: Slider, disposables: THREE.BufferGeometry[]): void {
+    for (const side of [1, -1]) {
+      const x = side * (slider.width / 2);
+      const points: THREE.Vector3[] = [];
+      for (let z = slider.z0; z < slider.z1; z += SLIDER_RAIL_SAMPLE) {
+        points.push(new THREE.Vector3(x, this.track.heightAt(z, x) + SLIDER_RAIL_Y_OFFSET, -z));
+      }
+      points.push(new THREE.Vector3(x, this.track.heightAt(slider.z1, x) + SLIDER_RAIL_Y_OFFSET, -slider.z1));
+      const curve = new THREE.CatmullRomCurve3(points);
+      const tubeSegments = Math.max(1, points.length - 1);
+      const geo = new THREE.TubeGeometry(curve, tubeSegments, SLIDER_RAIL_RADIUS, SLIDER_RAIL_RADIAL_SEGMENTS, false);
+      const mesh = new THREE.Mesh(geo, this.matSliderRail);
+      group.add(mesh);
+      disposables.push(geo);
+    }
+  }
+
+  /** Translucent ice-coloured tube for each half-pipe span inside a space-zone segment (art §5).
+   * Shared unit geometry scaled per-instance (radius, length, radius), so nothing to dispose. */
+  private buildSpacePipes(group: THREE.Group, seg: Segment): void {
+    for (const p of seg.pipes) {
+      const mid = (p.z0 + p.z1) / 2;
+      const radius = this.track.widthAt(mid) / 2;
+      const length = p.z1 - p.z0;
+      const mesh = new THREE.Mesh(this.spacePipeGeo, this.matSpacePipe);
+      mesh.scale.set(radius, length, radius);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(0, this.track.heightAt(mid, 0) + radius, -mid);
+      group.add(mesh);
+    }
   }
 
   /** Trunk (tapered cylinder) plus 5 flat frond boxes radiating from the top, shared by the
@@ -721,7 +922,7 @@ export class PropManager {
     group.add(holder);
   }
 
-  private buildDecor(group: THREE.Group, d: Decor, zone: ZoneId): void {
+  private buildDecor(group: THREE.Group, d: Decor, zone: ZoneId, disposables: THREE.BufferGeometry[]): void {
     const ground = this.track.heightAt(d.z);
     if (d.kind === 'pine') {
       const holder = new THREE.Group();
@@ -749,24 +950,42 @@ export class PropManager {
       group.add(stalactite);
     } else if (d.kind === 'cliff') {
       const width = cliffWidth(d.z);
+      const radius = width / 2;
+      const height = d.scale;
       const rotY = cliffRotation(d.z);
       const mat = this.matCliff.get(zone)!;
 
-      const cliff = new THREE.Mesh(this.cliffGeo, mat);
-      cliff.scale.set(width, d.scale, CLIFF_DEPTH);
-      cliff.position.set(d.x, ground + d.scale / 2 - CLIFF_Y_SINK, -d.z);
-      cliff.rotation.y = rotY;
-      group.add(cliff);
+      // Per-instance geometry (jittered from d.z), disposed with the segment; unlike most props
+      // here it can't be a shared/scaled unit shape because the jitter itself is per-instance.
+      const bodyGeo = new THREE.ConeGeometry(radius, height, CLIFF_CONE_SEGMENTS);
+      jitterConeXZ(bodyGeo, d.z, radius * CLIFF_JITTER_FRACTION);
+      const body = new THREE.Mesh(bodyGeo, mat);
+      body.position.set(d.x, ground + height / 2 - CLIFF_Y_SINK, -d.z);
+      body.rotation.y = rotY;
+      group.add(body);
+      disposables.push(bodyGeo);
 
-      // Narrower, shorter box stacked on top and offset back to break the flat silhouette.
-      const topHeight = d.scale * CLIFF_TOP_HEIGHT_SCALE;
-      const cliffTop = new THREE.Mesh(this.cliffGeo, mat);
-      cliffTop.scale.set(width * CLIFF_TOP_WIDTH_SCALE, topHeight, CLIFF_DEPTH);
-      cliffTop.position.set(
-        d.x, ground + d.scale - CLIFF_Y_SINK + topHeight / 2, -d.z - CLIFF_TOP_Z_OFFSET,
-      );
-      cliffTop.rotation.y = rotY;
-      group.add(cliffTop);
+      if (zone !== 'volcano') {
+        const capRadius = radius * CLIFF_CAP_RADIUS_SCALE;
+        const capHeight = height * CLIFF_CAP_HEIGHT_SCALE;
+        const cap = new THREE.Mesh(this.cliffCapGeo, this.matCliffCap);
+        cap.scale.set(capRadius, capHeight, capRadius);
+        cap.position.set(d.x, ground + height - CLIFF_Y_SINK - capHeight / 2, -d.z);
+        cap.rotation.y = rotY;
+        group.add(cap);
+      }
+    } else if (d.kind === 'dune') {
+      const width = duneWidth(d.z);
+      const dune = new THREE.Mesh(this.duneGeo, this.matDune);
+      dune.scale.set(width, d.scale, DUNE_DEPTH);
+      dune.position.set(d.x, ground, -d.z);
+      group.add(dune);
+    } else if (d.kind === 'pyramid') {
+      const pyramid = new THREE.Mesh(this.pyramidGeo, this.matPyramid);
+      pyramid.scale.set(d.scale * PYRAMID_RADIUS_SCALE, d.scale, d.scale * PYRAMID_RADIUS_SCALE);
+      pyramid.position.set(d.x, ground + d.scale / 2, -d.z);
+      pyramid.rotation.y = Math.PI / 4;
+      group.add(pyramid);
     } else if (d.kind === 'palm') {
       const holder = this.buildPalmMesh();
       holder.position.set(d.x, ground, -d.z);
@@ -829,21 +1048,27 @@ export class PropManager {
     return mat;
   }
 
+  /** Portal ring (16 boxes on a vertical circle) with a translucent zone-coloured disc inside and
+   * the zone-name label above (art §5; replaces the old posts/banner gate for every zone). */
   private buildGate(group: THREE.Group, gate: Gate): void {
     const ground = this.track.heightAt(gate.z);
-    const postX = TRACK_WIDTH / 2 + GATE_POST_X_OFFSET;
-    for (const side of [1, -1]) {
-      const post = new THREE.Mesh(this.gatePostGeo, this.matGatePost);
-      post.position.set(side * postX, ground + GATE_POST_HEIGHT / 2, -gate.z);
-      group.add(post);
+    const centerY = ground + GATE_RING_CENTER_Y;
+    for (let i = 0; i < GATE_RING_COUNT; i++) {
+      const angle = (i / GATE_RING_COUNT) * Math.PI * 2;
+      const box = new THREE.Mesh(this.gateRingBoxGeo, this.matGateRing);
+      box.position.set(
+        Math.cos(angle) * GATE_RING_RADIUS, centerY + Math.sin(angle) * GATE_RING_RADIUS, -gate.z,
+      );
+      box.rotation.z = angle - Math.PI / 2;
+      group.add(box);
     }
-    const bannerMat = this.matGateBanner.get(gate.zone)!;
-    const banner = new THREE.Mesh(this.gateBannerGeo, bannerMat);
-    banner.position.set(0, ground + GATE_BANNER_Y, -gate.z);
-    group.add(banner);
+
+    const disc = new THREE.Mesh(this.gateDiscGeo, this.matGateDisc.get(gate.zone)!);
+    disc.position.set(0, centerY, -gate.z);
+    group.add(disc);
 
     const name = new THREE.Mesh(this.gateNameGeo, this.getGateNameMaterial(gate.zone));
-    name.position.set(0, ground + GATE_BANNER_Y, -gate.z + GATE_NAME_Z_OFFSET);
+    name.position.set(0, centerY + GATE_RING_RADIUS + GATE_NAME_CLEARANCE, -gate.z + GATE_NAME_Z_OFFSET);
     group.add(name);
   }
 
