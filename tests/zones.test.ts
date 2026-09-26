@@ -15,7 +15,11 @@ describe('zoneAt', () => {
     expect(zoneAt(2000).id).toBe('cave');
     expect(zoneAt(2999).id).toBe('cave');
     expect(zoneAt(3000).id).toBe('volcano');
-    expect(zoneAt(5000).id).toBe('volcano');
+    expect(zoneAt(3999).id).toBe('volcano');
+    expect(zoneAt(4000).id).toBe('desert');
+    expect(zoneAt(4999).id).toBe('desert');
+    expect(zoneAt(5000).id).toBe('space');
+    expect(zoneAt(9000).id).toBe('space');
   });
 });
 
@@ -26,6 +30,8 @@ describe('zoneIndex', () => {
     expect(zoneIndex('city')).toBe(2);
     expect(zoneIndex('cave')).toBe(3);
     expect(zoneIndex('volcano')).toBe(4);
+    expect(zoneIndex('desert')).toBe(5);
+    expect(zoneIndex('space')).toBe(6);
   });
 });
 
@@ -41,5 +47,12 @@ describe('nextGoal', () => {
   it('stepAfter increments stay round', () => {
     expect(nextGoal(4500)).toBe(5000);
     expect(GOAL.stepAfter).toBe(1000);
+  });
+});
+
+describe('art zones', () => {
+  it('desert and space goals follow the volcano goal', () => {
+    expect(nextGoal(4500)).toBe(5000);
+    expect(nextGoal(5500)).toBe(6000);
   });
 });

@@ -135,7 +135,7 @@ const CLIFF_TOP_WIDTH_SCALE = 0.6;
 const CLIFF_TOP_HEIGHT_SCALE = 0.55;
 const CLIFF_TOP_Z_OFFSET = 2;
 const CLIFF_COLORS: Record<ZoneId, number> = {
-  snowfield: 0xe6eef7, forest: 0x7a5a3c, city: 0x7d8189, cave: 0x1e2438, volcano: 0x14100f,
+  snowfield: 0xe6eef7, forest: 0x7a5a3c, city: 0x7d8189, cave: 0x1e2438, volcano: 0x14100f, desert: 0xc98a3e, space: 0x2a3350,
 };
 
 // --- Gate geometry constants ---

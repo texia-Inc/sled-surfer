@@ -67,6 +67,26 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     fogFar: 260,
     gate: new THREE.Color(0xff6a2b),
   },
+  desert: {
+    ground: new THREE.Color(0.93, 0.78, 0.45),
+    ice: new THREE.Color(0.88, 0.82, 0.62),
+    bank: new THREE.Color(0.82, 0.58, 0.28),
+    sky: new THREE.Color(0xffb347),
+    fog: new THREE.Color(0xf2b46a),
+    fogNear: 80,
+    fogFar: 340,
+    gate: new THREE.Color(0xffc857),
+  },
+  space: {
+    ground: new THREE.Color(0.82, 0.90, 1.0),
+    ice: new THREE.Color(0.75, 0.88, 1.0),
+    bank: new THREE.Color(0.02, 0.03, 0.08),
+    sky: new THREE.Color(0x05060f),
+    fog: new THREE.Color(0x0a0d1f),
+    fogNear: 140,
+    fogFar: 380,
+    gate: new THREE.Color(0x9ad8ff),
+  },
 };
 
 /** The theme of the zone containing distance `z`. */

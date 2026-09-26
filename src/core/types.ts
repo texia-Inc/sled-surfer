@@ -1,13 +1,14 @@
 export type Phase = 'aim' | 'run' | 'ended' | 'results';
-export type Surface = 'snow' | 'ice' | 'road';
+export type Surface = 'snow' | 'ice' | 'road' | 'sand';
 export type ObstacleKind =
   | 'tree' | 'rock' | 'snowman'
   | 'stump' | 'car' | 'bus' | 'sign' | 'barrier' | 'stalagmite' | 'crystal'
-  | 'hay' | 'crate' | 'fence' | 'wall' | 'totem' | 'palm';
+  | 'hay' | 'crate' | 'fence' | 'wall' | 'totem' | 'palm'
+  | 'cactus' | 'asteroid' | 'satellite';
 export type UpgradeKind = 'slingshot' | 'sled' | 'income';
 
-export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave' | 'volcano';
-export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff' | 'signpost' | 'palm' | 'temple';
+export type ZoneId = 'snowfield' | 'forest' | 'city' | 'cave' | 'volcano' | 'desert' | 'space';
+export type DecorKind = 'pine' | 'building' | 'stalactite' | 'cliff' | 'signpost' | 'palm' | 'temple' | 'dune' | 'pyramid';
 
 export type LaneKind = 'ridge' | 'ground' | 'pillars';
 /** A lane within a multi-height RouteSection: heightAt adds `yOffset` (blended in/out at the
@@ -22,6 +23,10 @@ export interface Pillar { id: string; x: number; z: number; radius: number; yOff
 export interface RouteSection {
   z0: number; z1: number; lanes: Lane[]; pillars: Pillar[]; hazard: 'lava' | 'chasm';
 }
+
+/** A narrow elevated slide (art §2): widthAt narrows to `width` and heightAt rises by `yOffset`
+ * inside [z0, z1], both blended over SLIDER_BLEND metres at each end. */
+export interface Slider { z0: number; z1: number; width: number; yOffset: number; }
 
 /** 当たり判定なしの見た目用オブジェクト。y は地面からの高さ (stalactite の先端の基準点用)。他は 0 */
 export interface Decor { id: string; kind: DecorKind; x: number; z: number; y: number; scale: number; }
@@ -64,6 +69,8 @@ export interface Segment {
   /** Multi-height route section spanning part of this segment, or null when it has none
    * (terrain routes §1). */
   route: RouteSection | null;
+  /** Narrow elevated slider section inside this segment, or null (art §2). */
+  slider: Slider | null;
 }
 
 /** 物理が必要とするコースの問い合わせ。テストではこれを偽装する */

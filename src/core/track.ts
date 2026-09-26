@@ -229,6 +229,7 @@ const OBSTACLE_RADIUS: Record<ObstacleKind, number> = {
   tree: 0.8, rock: 1.0, snowman: 0.7,
   stump: 0.7, car: 1.3, bus: 2.2, sign: 0.5, barrier: 1.2, stalagmite: 0.8, crystal: 0.9,
   hay: 0.9, crate: 0.7, fence: 1.5, wall: 1.6, totem: 0.8, palm: 0.7,
+  cactus: 0.6, asteroid: 1.0, satellite: 0.9,
 };
 
 /** Whether hitting this obstacle kind breaks it (see physics.ts collision handling) rather than
@@ -237,6 +238,7 @@ export const OBSTACLE_BREAKABLE: Record<ObstacleKind, boolean> = {
   tree: false, rock: false, snowman: true,
   stump: true, car: false, bus: false, sign: true, barrier: true, stalagmite: false, crystal: false,
   hay: true, crate: true, fence: true, wall: false, totem: false, palm: false,
+  cactus: false, asteroid: false, satellite: true,
 };
 
 function generateSegment(seed: number, index: number): Segment {
@@ -713,7 +715,7 @@ function generateSegment(seed: number, index: number): Segment {
 
   return {
     index, z0, z1, widthStart, widthEnd, split, pipes, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
-    zone: zone.id, gate, decor, route,
+    zone: zone.id, gate, decor, route, slider: null,
   };
 }
 

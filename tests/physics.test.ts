@@ -13,7 +13,7 @@ function emptySegment(index: number): Segment {
     index, z0: index * 200, z1: index * 200 + 200, widthStart: DEFAULT_PHYSICS.trackWidth, widthEnd: DEFAULT_PHYSICS.trackWidth,
     split: null, pipes: [], corridorX: 0, bumps: [], ice: [], ramps: [],
     obstacles: [], coins: [], boosts: [], drops: [], zone: 'snowfield', gate: null, decor: [],
-    route: null,
+    route: null, slider: null,
   };
 }
 

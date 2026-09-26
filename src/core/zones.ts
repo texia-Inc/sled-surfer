@@ -10,33 +10,47 @@ export interface ZoneDef {
   boostChance: number;
   bumpScale: number;
   obstacleDensityMul: number;       // multiplies the obstacle count
+  /** Multiplies TRACK_GEN.pipeChance (art §1). */
+  pipeChanceMul: number;
+  /** Whether distant cliff decor is generated in this zone (art §1). */
+  cliffs: boolean;
 }
 
 export const ZONES: readonly ZoneDef[] = [
   {
     id: 'snowfield', nameJa: '雪山', z0: 0, surface: 'snow',
     obstacleKinds: ['tree', 'rock', 'snowman', 'crate'],
-    iceChance: 0.5, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0,
+    iceChance: 0.5, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0, pipeChanceMul: 1, cliffs: true,
   },
   {
     id: 'forest', nameJa: '森', z0: 600, surface: 'snow',
     obstacleKinds: ['tree', 'stump', 'rock', 'fence', 'hay'],
-    iceChance: 0.3, boostChance: 0.7, bumpScale: 1.0, obstacleDensityMul: 1.3,
+    iceChance: 0.3, boostChance: 0.7, bumpScale: 1.0, obstacleDensityMul: 1.3, pipeChanceMul: 1, cliffs: true,
   },
   {
     id: 'city', nameJa: '市街地', z0: 1200, surface: 'road',
     obstacleKinds: ['car', 'bus', 'sign', 'barrier', 'crate'],
-    iceChance: 0, boostChance: 0.6, bumpScale: 0.5, obstacleDensityMul: 1.0,
+    iceChance: 0, boostChance: 0.6, bumpScale: 0.5, obstacleDensityMul: 1.0, pipeChanceMul: 1, cliffs: true,
   },
   {
     id: 'cave', nameJa: '洞窟', z0: 2000, surface: 'snow',
     obstacleKinds: ['stalagmite', 'crystal', 'rock', 'crate'],
-    iceChance: 0.7, boostChance: 0.8, bumpScale: 1.2, obstacleDensityMul: 1.1,
+    iceChance: 0.7, boostChance: 0.8, bumpScale: 1.2, obstacleDensityMul: 1.1, pipeChanceMul: 1, cliffs: true,
   },
   {
     id: 'volcano', nameJa: '火山の遺跡', z0: 3000, surface: 'snow',
     obstacleKinds: ['totem', 'rock', 'crate', 'palm'],
-    iceChance: 0.2, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0,
+    iceChance: 0.2, boostChance: 0.8, bumpScale: 1.0, obstacleDensityMul: 1.0, pipeChanceMul: 1, cliffs: true,
+  },
+  {
+    id: 'desert', nameJa: '砂漠', z0: 4000, surface: 'sand',
+    obstacleKinds: ['cactus', 'rock', 'crate'],
+    iceChance: 0.15, boostChance: 0.8, bumpScale: 0.8, obstacleDensityMul: 0.9, pipeChanceMul: 0.5, cliffs: false,
+  },
+  {
+    id: 'space', nameJa: '宇宙', z0: 5000, surface: 'ice',
+    obstacleKinds: ['asteroid', 'satellite', 'crate'],
+    iceChance: 0, boostChance: 0.9, bumpScale: 0.6, obstacleDensityMul: 0.8, pipeChanceMul: 2.5, cliffs: false,
   },
 ];
 
@@ -55,4 +69,4 @@ export function zoneIndex(id: ZoneId): number {
 }
 
 /** Distance milestones for goalDistance; after the last one, +GOAL.stepAfter each. */
-export const ZONE_GOALS = [600, 1200, 2000, 3000, 4000];
+export const ZONE_GOALS = [600, 1200, 2000, 3000, 4000, 5000, 6000];
