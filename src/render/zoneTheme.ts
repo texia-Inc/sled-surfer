@@ -4,7 +4,9 @@ import type { ZoneId } from '../core/types';
 import { ZONES, zoneAt, zoneIndex } from '../core/zones';
 
 /** Metres over which colours linearly blend from the previous zone's theme after a zone start. */
-const BLEND_METERS = 60;
+/** Short: the zone portal is a warp, so the world snaps to the new theme right after the ring
+ * (a few metres of blend only hides the seam). */
+const BLEND_METERS = 4;
 
 export interface ZoneTheme {
   ground: THREE.Color;

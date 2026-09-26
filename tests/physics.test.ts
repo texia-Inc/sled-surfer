@@ -650,3 +650,32 @@ describe('air steering', () => {
     expect(s.x).toBeGreaterThan(0.5);
   });
 });
+
+describe('zone portals', () => {
+  it('crossing a gate line boosts once and counts a warp', () => {
+    const s = grounded({ vz: 15, z: 590 });
+    const track = fakeTrack(() => 0);
+    const seg = emptySegment(2);
+    seg.gate = { z: 600, zone: 'forest' };
+    track.segmentsAround = () => [seg];
+    let warpedAt = -1;
+    for (let i = 0; i < 240; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (warpedAt < 0 && s.warpCount === 1) warpedAt = s.z;
+    }
+    expect(s.warpCount).toBe(1);
+    expect(warpedAt).toBeGreaterThanOrEqual(600);
+    expect(warpedAt).toBeLessThan(600 + DEFAULT_PHYSICS.warpWindow);
+    expect(s.boostCount).toBe(1);
+  });
+
+  it('a run placed far beyond an old gate does not retro-trigger it', () => {
+    const s = grounded({ vz: 15, z: 700 });
+    const track = fakeTrack(() => 0);
+    const seg = emptySegment(3);
+    seg.gate = { z: 600, zone: 'forest' };
+    track.segmentsAround = () => [seg];
+    for (let i = 0; i < 60; i++) stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.warpCount).toBe(0);
+  });
+});

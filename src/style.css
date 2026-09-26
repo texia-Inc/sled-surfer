@@ -24,6 +24,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #8ecdf5; fon
 .hud .flash { position: absolute; inset: 0; background: #c0202a; opacity: 0; pointer-events: none; }
 .hud .flash.on { animation: wipeout-flash .3s ease-out forwards; }
 @keyframes wipeout-flash { from { opacity: .45; } to { opacity: 0; } }
+.hud .flash.warp { background: #ffffff; }
+.hud .flash.warp.on { animation: warp-flash .6s ease-out forwards; }
+@keyframes warp-flash { from { opacity: .9; } 30% { opacity: .6; } to { opacity: 0; } }
 .hud .chain { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 700; color: #2bd8ff; text-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .15s, transform .15s; }
 .hud .chain.on { opacity: 1; }
 .hud .chain.pop { transform: translateX(-50%) scale(1.25); }

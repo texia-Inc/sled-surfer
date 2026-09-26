@@ -39,6 +39,7 @@ export function createRunState(opts: { v0: number; angleDeg: number; rockets: nu
     brokenObstacleIds: new Set<string>(),
     breakCount: 0,
     wipeoutCount: 0,
+    warpCount: 0,
   };
 }
 
@@ -238,6 +239,18 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
         applyBoost(s, p, pad.id);
         break padLoop;
       }
+    }
+  }
+
+  // Zone portals warp the sled into the next zone: crossing the gate line gives the same boost
+  // as a pad (once per gate) and bumps warpCount so the HUD can flash. Grounded or airborne.
+  for (const seg of segments) {
+    const gate = seg.gate;
+    if (!gate) continue;
+    const id = `gate-${gate.z}`;
+    if (s.z >= gate.z && s.z < gate.z + p.warpWindow && !s.triggeredPadIds.has(id)) {
+      applyBoost(s, p, id);
+      s.warpCount += 1;
     }
   }
 

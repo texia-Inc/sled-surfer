@@ -39,6 +39,7 @@ export class Hud {
   private lastBreakCount = 0;
   private coinToastUntil = 0;
   private lastWipeoutCount = 0;
+  private lastWarpCount = 0;
   private wipeoutToastUntil = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void, onCameraToggle: () => void) {
@@ -118,11 +119,18 @@ export class Hud {
       this.wipeoutToast.textContent = WIPEOUT_TOAST_TEXT;
       this.wipeoutToastUntil = performance.now() + WIPEOUT_TOAST_SECONDS * 1000;
       // Restart the flash's fade-out animation even if it's still mid-fade from a previous hit.
-      this.flash.classList.remove('on');
+      this.flash.classList.remove('on', 'warp');
       void this.flash.offsetWidth;
       this.flash.classList.add('on');
     }
-    if (!run) this.lastWipeoutCount = 0;
+    if (run && run.warpCount !== this.lastWarpCount) {
+      this.lastWarpCount = run.warpCount;
+      // White portal flash: same element as the wipeout flash, different colour class.
+      this.flash.classList.remove('on', 'warp');
+      void this.flash.offsetWidth;
+      this.flash.classList.add('on', 'warp');
+    }
+    if (!run) { this.lastWipeoutCount = 0; this.lastWarpCount = 0; }
     this.wipeoutToast.classList.toggle('on', performance.now() < this.wipeoutToastUntil);
 
     const chainActive = !!run && run.boostChainTime > 0 && run.boostChain > 0;

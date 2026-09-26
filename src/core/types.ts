@@ -142,6 +142,8 @@ export interface RunState {
   breakCount: number;
   /** Number of times this run has wiped out on a route section's hazard floor (terrain routes §2). */
   wipeoutCount: number;
+  /** Number of zone portals warped through this run (a white flash + boost on change). */
+  warpCount: number;
 }
 
 export interface Upgrades { slingshot: number; sled: number; income: number; }

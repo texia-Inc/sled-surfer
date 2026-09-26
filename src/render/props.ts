@@ -176,7 +176,9 @@ const GATE_RING_RADIUS = 7;
 const GATE_RING_BOX = { w: 2.2, h: 2.2, d: 1.2 };
 const GATE_RING_COLOR = 0xbfe6ff;
 /** Height of the ring's centre above ground. */
-const GATE_RING_CENTER_Y = 7.5;
+/** Ring centre height: radius minus one metre, so the lowest block is buried and the sled passes
+ * through the ring's opening instead of its bottom block. */
+const GATE_RING_CENTER_Y = 6;
 const GATE_DISC_RADIUS = 6.2;
 const GATE_DISC_SEGMENTS = 32;
 const GATE_DISC_OPACITY = 0.35;

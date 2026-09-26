@@ -73,6 +73,9 @@ export interface PhysicsParams {
   wipeoutStun: number;
   /** vz is capped to this on a route-section wipeout. */
   wipeoutSpeed: number;
+  /** A portal counts as crossed only within this many metres past its z (so a run that starts
+   * or is placed beyond an old portal never retro-triggers it). */
+  warpWindow: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
@@ -134,6 +137,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   frontWallStun: 0.5,
   wipeoutStun: 1.0,
   wipeoutSpeed: 10,
+  warpWindow: 20,
 };
 
 export const LAUNCH = {
