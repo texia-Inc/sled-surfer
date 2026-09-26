@@ -1,8 +1,12 @@
 import * as THREE from 'three';
-import type { Track } from '../core/types';
+import type { Track, ZoneId } from '../core/types';
 import { SEGMENT_LENGTH, TRACK_WIDTH } from '../core/track';
 import { zoneAt } from '../core/zones';
 import { blendedThemeColor } from './zoneTheme';
+import { zoneDetailTexture } from './textures';
+
+/** UV scale for the per-zone ground detail texture (art §4): world metres per texture repeat. */
+const DETAIL_UV_SCALE = 8;
 
 const SIDE_MARGIN = 28;
 const WIDTH_SEGMENTS = 56;
@@ -42,7 +46,8 @@ const RIDGE_DARKEN = 0.9;
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
   private farMeshes = new Map<number, THREE.Mesh>();
-  private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  /** Per-zone detail-textured material for the near (detailed) segment meshes (art §4). */
+  private readonly materials = new Map<ZoneId, THREE.MeshLambertMaterial>();
   private readonly farMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   private readonly colorTmp = new THREE.Color();
   private track: Track;
@@ -90,6 +95,16 @@ export class TerrainManager {
     this.farMeshes.clear();
   }
 
+  /** Lazily-created, memoised per-zone detail-textured material (art §4). */
+  private materialFor(zone: ZoneId): THREE.MeshLambertMaterial {
+    let mat = this.materials.get(zone);
+    if (!mat) {
+      mat = new THREE.MeshLambertMaterial({ map: zoneDetailTexture(zone), vertexColors: true, flatShading: true });
+      this.materials.set(zone, mat);
+    }
+    return mat;
+  }
+
   private build(index: number): THREE.Mesh {
     const z0 = index * SEGMENT_LENGTH;
     const geo = new THREE.PlaneGeometry(TRACK_WIDTH + SIDE_MARGIN * 2, SEGMENT_LENGTH, WIDTH_SEGMENTS, LENGTH_SEGMENTS);
@@ -97,11 +112,14 @@ export class TerrainManager {
     const centerWorldZ = -(z0 + SEGMENT_LENGTH / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
+    const uvs = new Float32Array(pos.count * 2);
     for (let i = 0; i < pos.count; i++) {
       const lx = pos.getX(i);
       const lz = pos.getZ(i);
       const gz = -(centerWorldZ + lz);
       pos.setY(i, this.track.heightAt(gz, lx));
+      uvs[i * 2] = lx / DETAIL_UV_SCALE;
+      uvs[i * 2 + 1] = gz / DETAIL_UV_SCALE;
       const onTrack = Math.abs(lx) <= this.track.widthAt(gz) / 2;
       let c: THREE.Color;
       if (!onTrack) {
@@ -138,8 +156,9 @@ export class TerrainManager {
     }
     pos.needsUpdate = true;
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, this.material);
+    const mesh = new THREE.Mesh(geo, this.materialFor(zoneAt(z0).id));
     mesh.position.z = centerWorldZ;
     return mesh;
   }

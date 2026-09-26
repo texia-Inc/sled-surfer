@@ -16,6 +16,9 @@ export interface PlayerPose {
 
 const PULL_BACK_DISTANCE = 3;
 const FLIP_RATE = Math.PI * 2;
+/** Seconds of air time before the flip starts, so the initial slingshot launch hop doesn't spin
+ * the player (art §6). */
+const FLIP_DELAY = 0.5;
 const BANK = 0.35;
 
 export class PlayerView {
@@ -23,30 +26,59 @@ export class PlayerView {
   private readonly flame: THREE.Mesh;
 
   constructor(private readonly scene: THREE.Scene) {
-    const sled = new THREE.Mesh(
-      new THREE.BoxGeometry(1.3, 0.2, 2.0),
+    // Red inner tube (art §6), lying flat under the penguin.
+    const tube = new THREE.Mesh(
+      new THREE.TorusGeometry(0.9, 0.32, 10, 20),
       new THREE.MeshLambertMaterial({ color: 0xe0452b, flatShading: true }),
     );
-    sled.position.y = 0.1;
+    tube.rotation.x = Math.PI / 2;
+    tube.position.y = 0.32;
 
     const body = new THREE.Mesh(
-      new THREE.SphereGeometry(0.45, 12, 10),
+      new THREE.SphereGeometry(0.42, 12, 10),
       new THREE.MeshLambertMaterial({ color: 0x1b1f2a, flatShading: true }),
     );
-    body.position.set(0, 0.65, 0.1);
+    body.scale.set(1, 1.15, 1);
+    body.position.set(0, 0.75, 0);
 
     const belly = new THREE.Mesh(
-      new THREE.SphereGeometry(0.36, 12, 10),
+      new THREE.SphereGeometry(0.34, 12, 10),
       new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }),
     );
-    belly.position.set(0, 0.6, -0.15);
+    belly.position.set(0, 0.7, -0.18);
+
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 12, 10),
+      new THREE.MeshLambertMaterial({ color: 0x1b1f2a, flatShading: true }),
+    );
+    head.position.set(0, 1.25, 0);
+
+    const eyeMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), eyeMaterial);
+    eyeL.position.set(0.11, 1.32, -0.24);
+    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), eyeMaterial);
+    eyeR.position.set(-0.11, 1.32, -0.24);
 
     const beak = new THREE.Mesh(
-      new THREE.ConeGeometry(0.1, 0.3, 8),
+      new THREE.ConeGeometry(0.08, 0.28, 8),
       new THREE.MeshLambertMaterial({ color: 0xffa726, flatShading: true }),
     );
-    beak.position.set(0, 0.82, -0.5);
+    beak.position.set(0, 1.24, -0.36);
     beak.rotation.x = -Math.PI / 2;
+
+    const flipperMaterial = new THREE.MeshLambertMaterial({ color: 0x1b1f2a, flatShading: true });
+    const flipperL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.25), flipperMaterial);
+    flipperL.position.set(0.45, 0.8, 0);
+    flipperL.rotation.z = 0.6;
+    const flipperR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.25), flipperMaterial);
+    flipperR.position.set(-0.45, 0.8, 0);
+    flipperR.rotation.z = -0.6;
+
+    const footMaterial = new THREE.MeshLambertMaterial({ color: 0xffa726, flatShading: true });
+    const footL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.32), footMaterial);
+    footL.position.set(0.15, 0.36, -0.5);
+    const footR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.32), footMaterial);
+    footR.position.set(-0.15, 0.36, -0.5);
 
     this.flame = new THREE.Mesh(
       new THREE.ConeGeometry(0.25, 1.2, 8),
@@ -56,7 +88,7 @@ export class PlayerView {
     this.flame.rotation.x = Math.PI / 2;
     this.flame.visible = false;
 
-    this.group.add(sled, body, belly, beak, this.flame);
+    this.group.add(tube, body, belly, head, eyeL, eyeR, beak, flipperL, flipperR, footL, footR, this.flame);
     scene.add(this.group);
   }
 
@@ -65,7 +97,7 @@ export class PlayerView {
     if (p.grounded) {
       this.group.rotation.x = Math.atan(p.pitchSlope);
     } else {
-      this.group.rotation.x = p.airTime * FLIP_RATE;
+      this.group.rotation.x = Math.max(0, p.airTime - FLIP_DELAY) * FLIP_RATE;
     }
     this.group.rotation.z = -p.steer * BANK;
     this.flame.visible = p.rocketing;
