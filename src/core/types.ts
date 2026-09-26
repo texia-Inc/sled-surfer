@@ -77,6 +77,8 @@ export interface TrackQuery {
   pipeAt(z: number): { z0: number; z1: number; wallHeight: number } | null;
   /** The lane containing (z, x) inside a route section, or null outside any route section.
    * Optional so pre-existing fakes (without a route feature to test) need no change. */
+  /** The route section containing z, or null. Optional for the same reason as laneAt. */
+  routeAt?(z: number): RouteSection | null;
   laneAt?(z: number, x: number): Lane | null;
   /** Whether (z, x) sits within a pillar's radius inside a route section's `pillars` lane.
    * Optional for the same reason as laneAt. */

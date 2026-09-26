@@ -4,7 +4,7 @@ import {
 } from '../src/core/physics';
 import { DEFAULT_PHYSICS, LAUNCH } from '../src/core/params';
 import { createTrack, SLOPE_STEP, MAX_SLOPE } from '../src/core/track';
-import type { Coin, RunState, Segment, Surface, TrackQuery } from '../src/core/types';
+import type { Coin, Lane, RouteSection, RunState, Segment, Surface, TrackQuery } from '../src/core/types';
 
 const DT = 1 / 120;
 
@@ -557,5 +557,85 @@ describe('rocket', () => {
   it('adds no speed once vz is at or above rocketSpeedCap', () => {
     const s = run(grounded({ vz: 50 }), flat, 0.5, 0, true);
     expect(s.vz).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('route sections: walls and wipeouts', () => {
+  const RIDGE_H = 4;
+  const HAZARD = -6;
+  const lanes: Lane[] = [
+    { xMin: -14, xMax: -4, yOffset: RIDGE_H, kind: 'ridge' },
+    { xMin: -4, xMax: 4, yOffset: 0, kind: 'ground' },
+    { xMin: 4, xMax: 14, yOffset: HAZARD, kind: 'pillars' },
+  ];
+  const route: RouteSection = { z0: 20, z1: 200, lanes, pillars: [{ id: 'p0', x: 9, z: 60, radius: 5, yOffset: 2 }], hazard: 'chasm' };
+  const laneFor = (x: number): Lane => lanes.find((l) => x >= l.xMin && x <= l.xMax) ?? (x < -14 ? lanes[0] : lanes[2]);
+  const onPillar = (z: number, x: number): boolean => route.pillars.some((p) => (x - p.x) ** 2 + (z - p.z) ** 2 <= p.radius ** 2);
+  const height = (z: number, x = 0): number => {
+    if (z < route.z0 || z > route.z1) return 0;
+    const lane = laneFor(x);
+    if (lane.kind === 'pillars') return onPillar(z, x) ? 2 : HAZARD;
+    return lane.yOffset;
+  };
+  function routeTrack(): TrackQuery {
+    return {
+      ...fakeTrack(height),
+      routeAt: (z) => (z >= route.z0 && z <= route.z1 ? route : null),
+      laneAt: (z, x) => (z >= route.z0 && z <= route.z1 ? laneFor(x) : null),
+      onPillar,
+    };
+  }
+
+  it('cannot slide sideways into a higher ridge lane', () => {
+    const s = grounded({ vz: 15, z: 100, x: -2 });
+    const track = routeTrack();
+    for (let i = 0; i < 120; i++) stepRun(s, { steer: -1, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.x).toBeGreaterThan(-4 - 1e-6);
+    expect(s.grounded).toBe(true);
+    expect(s.y).toBeCloseTo(0, 3);
+  });
+
+  it('a front step stops the sled with a stun instead of climbing it', () => {
+    const s = grounded({ vz: 20, z: 10, x: -8 });
+    const track = routeTrack();
+    let stunned = false;
+    for (let i = 0; i < 120; i++) {
+      stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (s.stunTime > 0) stunned = true;
+    }
+    expect(stunned).toBe(true);
+    expect(s.z).toBeLessThan(route.z0 + 0.5);
+    expect(s.y).toBeCloseTo(0, 3);
+  });
+
+  it('dropping off the ridge onto the ground lane is a normal takeoff', () => {
+    const s = grounded({ vz: 15, z: 100, x: -8, y: RIDGE_H });
+    const track = routeTrack();
+    let airborne = false;
+    for (let i = 0; i < 240; i++) {
+      stepRun(s, { steer: 1, rocket: false }, DT, track, DEFAULT_PHYSICS);
+      if (!s.grounded) airborne = true;
+    }
+    expect(airborne).toBe(true);
+    expect(s.x).toBeGreaterThan(-4);
+  });
+
+  it('resting on the hazard floor wipes out onto the nearest solid lane', () => {
+    const s = grounded({ vz: 25, z: 100, x: 6, y: HAZARD });
+    const track = routeTrack();
+    stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.wipeoutCount).toBe(1);
+    expect(s.stunTime).toBeCloseTo(DEFAULT_PHYSICS.wipeoutStun, 2);
+    expect(s.vz).toBeLessThanOrEqual(DEFAULT_PHYSICS.wipeoutSpeed);
+    expect(laneFor(s.x).kind).not.toBe('pillars');
+    expect(s.y).toBeCloseTo(height(s.z, s.x), 3);
+    expect(s.grounded).toBe(true);
+  });
+
+  it('a pillar top is solid: no wipeout while on it', () => {
+    const s = grounded({ vz: 10, z: 58, x: 9, y: 2 });
+    const track = routeTrack();
+    for (let i = 0; i < 10; i++) stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.wipeoutCount).toBe(0);
   });
 });

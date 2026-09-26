@@ -118,7 +118,15 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     }
 
     const vy0 = s.vz * slope0;
-    s.z += s.vz * dt;
+    // Front wall (routes §2): ground rising more than stepUpLimit within wallLookahead ahead is
+    // a wall (route entry step, pillar side), not a slope - stop, lose speed, stun.
+    const wallAhead = track.heightAt(s.z + p.wallLookahead, s.x) - s.y > p.stepUpLimit;
+    if (wallAhead) {
+      s.vz *= p.frontWallSpeedMul;
+      s.stunTime = Math.max(s.stunTime, p.frontWallStun);
+      s.vy = 0;
+    }
+    if (!wallAhead) s.z += s.vz * dt;
     const slope1 = track.slopeAt(s.z, s.x);
     const vy1 = s.vz * slope1;
     const ground = track.heightAt(s.z, s.x);
@@ -129,7 +137,9 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     const pipeRimTakeoff = pipe !== null
       && Math.abs(s.x) > p.pipeRimFraction * (track.widthAt(s.z) / 2)
       && s.vx * slopeX > p.pipeTakeoffVy;
-    if (s.vz > 0 && (requiredAccel < -p.g || ground < projected)) {
+    if (wallAhead) {
+      // stay put on the current ground this step
+    } else if (s.vz > 0 && (requiredAccel < -p.g || ground < projected)) {
       s.grounded = false;
       s.vy = vy0;
       s.y = Math.max(ground, s.y + vy0 * dt);
@@ -169,6 +179,7 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     }
   }
 
+  const prevX = s.x;
   s.x += s.vx * dt;
   const half = track.widthAt(s.z) / 2 - p.sledRadius;
   if (s.x > half) {
@@ -177,6 +188,36 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   } else if (s.x < -half) {
     s.x = -half;
     s.vx = Math.abs(s.vx) * p.wallBounceDamping;
+  }
+
+  // Lateral wall (routes §2): can't slide sideways into ground more than stepUpLimit above us
+  // (a ridge lane's side, a pillar's side). Falling to a lower lane is just a normal takeoff.
+  if (s.grounded && track.heightAt(s.z, s.x) - s.y > p.stepUpLimit) {
+    s.x = prevX;
+    s.vx = 0;
+  }
+
+  // Wipeout (routes §2): resting on a hazard floor (pillars lane, not on a pillar) throws the
+  // sled back onto the nearest solid lane with a stun and a speed cap; the run continues.
+  if (s.grounded && track.laneAt && track.onPillar) {
+    const lane = track.laneAt(s.z, s.x);
+    if (lane && lane.kind === 'pillars' && !track.onPillar(s.z, s.x)) {
+      const route = track.routeAt ? track.routeAt(s.z) : null;
+      const solid = route ? route.lanes.filter((l) => l.kind !== 'pillars') : [];
+      if (solid.length > 0) {
+        const nearest = solid.reduce((best, l) => {
+          const c = (l.xMin + l.xMax) / 2;
+          const bc = (best.xMin + best.xMax) / 2;
+          return Math.abs(c - s.x) < Math.abs(bc - s.x) ? l : best;
+        });
+        s.x = (nearest.xMin + nearest.xMax) / 2;
+      }
+      s.y = track.heightAt(s.z, s.x);
+      s.vx = 0;
+      s.vz = Math.min(s.vz, p.wipeoutSpeed);
+      s.stunTime = Math.max(s.stunTime, p.wipeoutStun);
+      s.wipeoutCount += 1;
+    }
   }
 
   const groundHere = track.heightAt(s.z, s.x);
