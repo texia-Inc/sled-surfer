@@ -81,7 +81,8 @@ export const TRACK_GEN = {
   routeChance: 0.4, routeMinZ: 400, routeLenMin: 100, routeLenRange: 60, routeMargin: 20,
   ridgeHeight: 4, hazardDepth: 6, pillarTop: 2, pillarRadius: 5, pillarSpacing: 28, pillarFirstOffset: 6,
   routeEntryStep: 1, routeExitBlend: 12, routeEntryRampLead: 22, routeEntryRampWidth: 8,
-  pillarRampWidth: 5, pillarRampOffset: 1, ridgeCoinMul: 3, ridgeCoinSpacing: 1.5, pillarCoins: 3, pillarCoinSpacing: 1.5,
+  /** Pillar ramps end at the pillar's far edge: z = pillar.z + pillarRadius - RAMP_SMALL.length. */
+  pillarRampWidth: 5, pillarRampOffset: 5 - 12, ridgeCoinMul: 3, ridgeCoinSpacing: 1.5, pillarCoins: 3, pillarCoinSpacing: 1.5,
   narrowLayoutWidth: 24,
 } as const;
 

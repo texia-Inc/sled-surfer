@@ -121,7 +121,12 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     // Front wall (routes §2): ground rising more than stepUpLimit within wallLookahead ahead is
     // a wall (route entry step, pillar side), not a slope - stop, lose speed, stun.
     const wallAhead = track.heightAt(s.z + p.wallLookahead, s.x) - s.y > p.stepUpLimit;
-    if (wallAhead) {
+    if (wallAhead && !wasStunned) {
+      // One-shot on contact (like obstacle hits): lose speed, stun, and slide sideways toward
+      // whichever side is lower so the sled comes off the wall instead of pinning against it.
+      const hL = track.heightAt(s.z + p.wallLookahead, s.x - p.wallSlideProbe);
+      const hR = track.heightAt(s.z + p.wallLookahead, s.x + p.wallSlideProbe);
+      s.vx = (hL <= hR ? -1 : 1) * p.collisionPushSpeed;
       s.vz *= p.frontWallSpeedMul;
       s.stunTime = Math.max(s.stunTime, p.frontWallStun);
       s.vy = 0;

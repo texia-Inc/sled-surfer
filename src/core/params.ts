@@ -61,6 +61,8 @@ export interface PhysicsParams {
   stepUpLimit: number;
   /** How far ahead (m) the front-wall check samples the ground (routes §2). */
   wallLookahead: number;
+  /** Lateral probe distance (m) used to pick which way to slide off a front wall. */
+  wallSlideProbe: number;
   /** vz multiplier applied when a forward step is blocked by a front wall. */
   frontWallSpeedMul: number;
   /** Stun duration (s) applied when a forward step is blocked by a front wall. */
@@ -124,6 +126,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   pipeRimFraction: 0.85,
   stepUpLimit: 1.2,
   wallLookahead: 1.0,
+  wallSlideProbe: 3,
   frontWallSpeedMul: 0.3,
   frontWallStun: 0.5,
   wipeoutStun: 1.0,

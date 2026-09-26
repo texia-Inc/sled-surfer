@@ -101,6 +101,8 @@ describe('createTrack', () => {
     for (let i = 0; i < 40; i++) {
       const s = t.getSegment(i);
       for (const r of s.ramps) {
+        // Pillar ramps end at the pillar edge, where the lip also drops to the hazard floor.
+        if (r.id.includes('-pr')) continue;
         const end = r.z + r.length;
         // Ramp height is per-lane (terrain §1): query at the ramp's own x, not the default x=0.
         const drop = t.heightAt(end - 0.01, r.x) - t.heightAt(end + 0.01, r.x);
@@ -785,9 +787,12 @@ describe('route sections', () => {
     expect(t.heightAt(between, centre(pillars)) - gBetween).toBeCloseTo(-TRACK_GEN.hazardDepth, 3);
     expect(t.onPillar(p0.z, p0.x)).toBe(true);
     expect(t.onPillar(between, p0.x)).toBe(false);
-    // Pillar top relative to the ground lane, measured before the pillar ramp begins (p.z + 1).
-    const onTop = p0.z - 2;
-    expect(t.heightAt(onTop, p0.x) - t.heightAt(onTop, centre(ground))).toBeCloseTo(TRACK_GEN.pillarTop, 3);
+    // Pillar top relative to the ground lane, sampled beside the pillar ramp (x + 3 is on the
+    // pillar, radius 5, but off the 5 m-wide ramp).
+    expect(t.heightAt(p0.z, p0.x + 3) - t.heightAt(p0.z, centre(ground))).toBeCloseTo(TRACK_GEN.pillarTop, 3);
+    // The ramp lip coincides with the pillar edge: no cliff between ramp end and hazard floor.
+    const pr = seg.ramps.find((r) => r.id === `${seg.index}-pr0`)!;
+    expect(pr.z + pr.length).toBeCloseTo(p0.z + TRACK_GEN.pillarRadius, 6);
     expect(t.heightAt(route.z1, centre(ridge)) - t.heightAt(route.z1, centre(ground))).toBeCloseTo(0, 3);
     expect(t.laneAt(zMid, centre(ridge))?.kind).toBe('ridge');
     expect(t.routeAt(zMid)).toBe(route);
