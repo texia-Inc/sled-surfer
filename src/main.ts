@@ -251,6 +251,9 @@ function boot(): void {
   }
 
   requestAnimationFrame(frame);
+
+  // Debug hook for headless playtests (read-only inspection of game state from DevTools).
+  (window as unknown as { __sled?: unknown }).__sled = { game };
 }
 
 boot();
