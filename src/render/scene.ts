@@ -15,7 +15,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(SKY);
+  // No scene.background: the SkyDome (render/sky.ts) draws a procedural sky sphere instead.
   const fog = new THREE.Fog(SKY, 60, 220);
   scene.fog = fog;
 

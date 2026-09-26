@@ -11,6 +11,7 @@ import { TerrainManager } from './render/terrain';
 import { PropManager } from './render/props';
 import { PlayerView } from './render/player';
 import { Effects } from './render/effects';
+import { SkyDome } from './render/sky';
 import { blendedThemeColor, themeAt } from './render/zoneTheme';
 import { Hud } from './ui/hud';
 import { AimGauge } from './ui/aim';
@@ -102,8 +103,8 @@ function boot(): void {
     return;
   }
   const { renderer, scene, camera, fog } = created;
-  const skyTmp = new THREE.Color();
   const fogTmp = new THREE.Color();
+  const sky = new SkyDome(scene);
   const terrain = new TerrainManager(scene, game.track);
   const props = new PropManager(scene, game.track, game.physicsParams());
   const player = new PlayerView(scene);
@@ -207,7 +208,6 @@ function boot(): void {
       lastWipeoutCount = 0;
     }
 
-    (scene.background as THREE.Color).copy(blendedThemeColor(z, (t) => t.sky, skyTmp));
     fog.color.copy(blendedThemeColor(z, (t) => t.fog, fogTmp));
     const fogTarget = themeAt(z);
     const fogK = Math.min(1, frameDt * FOG_LERP_RATE);
@@ -245,6 +245,7 @@ function boot(): void {
       dt: frameDt,
     });
     updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt }, frameDt);
+    sky.update(z, camera.position, now / 1000);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
