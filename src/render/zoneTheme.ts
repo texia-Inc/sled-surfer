@@ -58,14 +58,14 @@ export const ZONE_THEMES: Record<ZoneId, ZoneTheme> = {
     gate: new THREE.Color(0xb388ff),
   },
   volcano: {
-    ground: new THREE.Color(0.32, 0.27, 0.24),
-    ice: new THREE.Color(0.75, 0.85, 1.0),
-    bank: new THREE.Color(0.08, 0.06, 0.06),
-    sky: new THREE.Color(0xc7a4e0),
-    fog: new THREE.Color(0x998aa0),
-    fogNear: 55,
-    fogFar: 300,
-    gate: new THREE.Color(0xff6a1f),
+    ground: new THREE.Color(0.32, 0.26, 0.24),
+    ice: new THREE.Color(0.62, 0.80, 0.92),
+    bank: new THREE.Color(0.12, 0.10, 0.11),
+    sky: new THREE.Color(0x6b4a7a),
+    fog: new THREE.Color(0x8a6a8f),
+    fogNear: 40,
+    fogFar: 260,
+    gate: new THREE.Color(0xff6a2b),
   },
 };
 

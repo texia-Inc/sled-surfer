@@ -33,6 +33,12 @@ const FAR_DARKEN = 0.85;
  * overlap at the boundary instead of leaving a visible seam/gap. */
 const FAR_DROP = 0.4;
 
+/** Route-section hazard floor colours (terrain routes §4): bright lava glow in the volcano zone,
+ * dark chasm elsewhere. Ridge lanes use the ground colour darkened by RIDGE_DARKEN. */
+const LAVA_COLOR = new THREE.Color(1.0, 0.45, 0.10);
+const CHASM_COLOR = new THREE.Color(0.10, 0.11, 0.16);
+const RIDGE_DARKEN = 0.9;
+
 export class TerrainManager {
   private meshes = new Map<number, THREE.Mesh>();
   private farMeshes = new Map<number, THREE.Mesh>();
@@ -104,6 +110,17 @@ export class TerrainManager {
         c = blendedThemeColor(gz, (t) => t.ice, this.colorTmp);
       } else {
         c = blendedThemeColor(gz, (t) => t.ground, this.colorTmp);
+      }
+      if (onTrack) {
+        const route = this.track.routeAt(gz);
+        if (route) {
+          const lane = this.track.laneAt(gz, lx);
+          if (lane?.kind === 'pillars' && !this.track.onPillar(gz, lx)) {
+            c = route.hazard === 'lava' ? LAVA_COLOR : CHASM_COLOR;
+          } else if (lane?.kind === 'ridge') {
+            c.multiplyScalar(RIDGE_DARKEN);
+          }
+        }
       }
       if (onTrack && zoneAt(gz).id === 'city') {
         const ax = Math.abs(lx);
