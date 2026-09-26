@@ -90,6 +90,9 @@ export interface TrackQuery {
   /** Whether (z, x) sits within a pillar's radius inside a route section's `pillars` lane.
    * Optional for the same reason as laneAt. */
   onPillar?(z: number, x: number): boolean;
+  /** The slider section containing `z`, or null outside one (art §2). Optional for the same
+   * reason as routeAt. */
+  sliderAt?(z: number): Slider | null;
 }
 
 export interface Track extends TrackQuery {
@@ -100,6 +103,8 @@ export interface Track extends TrackQuery {
   routeAt(z: number): RouteSection | null;
   laneAt(z: number, x: number): Lane | null;
   onPillar(z: number, x: number): boolean;
+  /** The slider section containing `z`, or null when `z` isn't inside one (art §2). */
+  sliderAt(z: number): Slider | null;
 }
 
 export interface Input { steer: number; rocket: boolean; }

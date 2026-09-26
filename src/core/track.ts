@@ -1,5 +1,5 @@
 import type {
-  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Lane, LaneKind, Obstacle, ObstacleKind, Pillar, Ramp, RouteSection, Segment, Surface,
+  BoostPad, Bump, Coin, Decor, Drop, Gate, IceBand, Lane, LaneKind, Obstacle, ObstacleKind, Pillar, Ramp, RouteSection, Segment, Slider, Surface,
   Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
@@ -90,6 +90,18 @@ export const TRACK_GEN = {
   /** No drop may end, and no big free ramp may start, within this many metres before a route
    * section: a launch from either sails clean over the whole section. */
   routeApproachClear: 150,
+  /** Narrow elevated slider sections (art §2): widthAt narrows from the track's normal width to
+   * sliderWidth (and heightAt rises by sliderHeight) over sliderBlend metres at each end. No
+   * slider when the segment already has a route section. Own salted rng stream, decided right
+   * after the route block so every later feature can avoid its span the way they avoid a route. */
+  sliderChance: 0.15, sliderChanceArt: 0.6, sliderMinZ: 800,
+  sliderLenMin: 80, sliderLenRange: 60, sliderMargin: 20,
+  sliderWidth: 6, sliderHeight: 3, sliderBlend: 20, sliderEdgeFall: 3,
+  sliderCoinSpacing: 3, sliderPadOffset: 25,
+  /** Desert dune/pyramid decor (art §1): dunes on both banks (duneCountMin..+duneCountRange per
+   * side), a pyramid per side with pyramidChance probability. Space has no decor at all. */
+  duneCountMin: 2, duneCountRange: 2, duneXMin: 50, duneXRange: 90, duneScaleMin: 10, duneScaleRange: 20,
+  pyramidChance: 0.4, pyramidXMin: 60, pyramidXRange: 30, pyramidScaleMin: 20, pyramidScaleRange: 15,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -213,9 +225,32 @@ function routeHeight(route: RouteSection, z: number, x: number): number {
   return off * entry * exit;
 }
 
+/** Entry/exit smoothstep blend for a slider span: 0 at z0/z1, 1 for the plateau between
+ * z0+sliderBlend and z1-sliderBlend, mirroring widthAt's own narrowing so the elevated deck and
+ * the narrowed track line up. */
+function sliderBlend(slider: Slider, z: number): number {
+  const entry = smoothstep((z - slider.z0) / TRACK_GEN.sliderBlend);
+  const exit = smoothstep((slider.z1 - z) / TRACK_GEN.sliderBlend);
+  return entry * exit;
+}
+
+/** Slider height contribution (art §2): `sliderHeight` raised for |x| <= width/2 + 1 (blended
+ * in/out via sliderBlend), falling linearly to 0 over the next sliderEdgeFall metres, 0 beyond
+ * that - so the deck reads as a narrow ledge rather than a floating slab. */
+function sliderHeightContribution(slider: Slider, z: number, x: number): number {
+  if (z < slider.z0 || z > slider.z1) return 0;
+  const half = slider.width / 2;
+  const ax = Math.abs(x);
+  const edgeOuter = half + 1 + TRACK_GEN.sliderEdgeFall;
+  if (ax >= edgeOuter) return 0;
+  const edge = ax <= half + 1 ? 1 : 1 - (ax - (half + 1)) / TRACK_GEN.sliderEdgeFall;
+  return slider.yOffset * sliderBlend(slider, z) * edge;
+}
+
 function localHeight(seg: Segment, z: number, x: number): number {
   let h = 0;
   if (seg.route) h += routeHeight(seg.route, z, x);
+  if (seg.slider) h += sliderHeightContribution(seg.slider, z, x);
   for (const b of seg.bumps) h += bumpHeight(b, z);
   for (const r of seg.ramps) h += rampHeight(r, z, x);
   if (seg.pipes.length > 0) {
@@ -348,6 +383,37 @@ function generateSegment(seed: number, index: number): Segment {
     bumps.push(...keep);
   }
 
+  // Narrow elevated slider sections (art §2). Own salted rng stream, decided right after the
+  // route block: no slider when this segment already has a route section. Every later feature
+  // (drops, free ramps, pipes, pads, obstacles, coin lines) rejects overlap via inSliderSpan the
+  // same way they already reject overlap with a route via inRouteSpan; bumps and ice bands were
+  // already drawn from the shared `rng` above (before this span is known), so any that overlap
+  // are trimmed here instead, the same way bumps are trimmed for a route just above.
+  const sliderRng = mulberry32(hashSeed(seed, index) ^ 0x51ad3e77);
+  let slider: Slider | null = null;
+  if (route === null && z0 >= TRACK_GEN.sliderMinZ) {
+    const sliderChance = zone.id === 'desert' || zone.id === 'space' ? TRACK_GEN.sliderChanceArt : TRACK_GEN.sliderChance;
+    if (sliderRng() < sliderChance) {
+      const length = TRACK_GEN.sliderLenMin + sliderRng() * TRACK_GEN.sliderLenRange;
+      const lo = z0 + TRACK_GEN.sliderMargin;
+      const hi = z1 - TRACK_GEN.sliderMargin - length;
+      if (hi > lo) {
+        const sz0 = lo + sliderRng() * (hi - lo);
+        slider = { z0: sz0, z1: sz0 + length, width: TRACK_GEN.sliderWidth, yOffset: TRACK_GEN.sliderHeight };
+      }
+    }
+  }
+  const inSliderSpan = (z: number): boolean => slider !== null
+    && z >= slider.z0 - TRACK_GEN.rampExclusionBefore && z <= slider.z1 + TRACK_GEN.rampExclusionAfter;
+  if (slider !== null) {
+    const keepBumps = bumps.filter((b) => b.z + b.width < slider!.z0 - TRACK_GEN.rampExclusionBefore || b.z - b.width > slider!.z1 + TRACK_GEN.rampExclusionAfter);
+    bumps.length = 0;
+    bumps.push(...keepBumps);
+    const keepIce = ice.filter((b) => b.z1 < slider!.z0 - TRACK_GEN.rampExclusionBefore || b.z0 > slider!.z1 + TRACK_GEN.rampExclusionAfter);
+    ice.length = 0;
+    ice.push(...keepIce);
+  }
+
   // Ramps and drops. A drop's companion big ramp (added first, if a drop is rolled) counts
   // toward the segment's 1-2 ramps; any further ramps are drawn small/big at rampBigChance and
   // kept at least rampMinGap apart from every ramp already placed (including the drop's).
@@ -371,7 +437,8 @@ function generateSegment(seed: number, index: number): Segment {
       + rng() * (SEGMENT_LENGTH - TRACK_GEN.dropStartMargin - TRACK_GEN.dropEndMargin);
     const depth = TRACK_GEN.dropDepthMin + rng() * TRACK_GEN.dropDepthRange;
     const dropClearOfRoute = !inRouteSpan(dz - RAMP_BIG.length) && !inRouteSpan(dz + TRACK_GEN.dropLength)
-      && !inRouteApproach(dz + TRACK_GEN.dropLength);
+      && !inRouteApproach(dz + TRACK_GEN.dropLength)
+      && !inSliderSpan(dz - RAMP_BIG.length) && !inSliderSpan(dz + TRACK_GEN.dropLength);
     if (dropClearOfRoute) drops.push({ z: dz, depth, length: TRACK_GEN.dropLength });
     // Big drop ramps are centred (x=0) so the drop line-up is fair regardless of who's aiming.
     if (dropClearOfRoute) ramps.push({
@@ -389,6 +456,7 @@ function generateSegment(seed: number, index: number): Segment {
     const rz = rampSpanLo + rng() * (rampSpanHi - rampSpanLo);
     if (ramps.some((r) => Math.abs(rz - r.z) < TRACK_GEN.rampMinGap)) continue;
     if (inRouteSpan(rz) || inRouteSpan(rz + template.length)) continue;
+    if (inSliderSpan(rz) || inSliderSpan(rz + template.length)) continue;
     if (big && inRouteApproach(rz)) continue;
     const width = big ? TRACK_GEN.rampBigWidth : TRACK_GEN.rampWidth;
     ramps.push({
@@ -444,7 +512,7 @@ function generateSegment(seed: number, index: number): Segment {
   // exists there either).
   const pipeRng = mulberry32(hashSeed(seed, index) ^ 0x38b34ae5);
   const pipes: Segment['pipes'] = [];
-  if (z0 >= TRACK_GEN.pipeMinZ && pipeRng() < TRACK_GEN.pipeChance) {
+  if (z0 >= TRACK_GEN.pipeMinZ && pipeRng() < TRACK_GEN.pipeChance * zone.pipeChanceMul) {
     const length = TRACK_GEN.pipeLenMin + pipeRng() * TRACK_GEN.pipeLenRange;
     const lo = z0 + TRACK_GEN.pipeMargin;
     const hi = z1 - TRACK_GEN.pipeMargin - length;
@@ -460,7 +528,8 @@ function generateSegment(seed: number, index: number): Segment {
       );
       const overlapsSplit = split !== null && pz0 < split.z1 && pz1 > split.z0;
       const overlapsRoute = inRouteSpan(pz0) || inRouteSpan(pz1) || (route !== null && pz0 < route.z0 && pz1 > route.z1);
-      if (!overlapsRamp && !overlapsDrop && !overlapsSplit && !overlapsRoute) {
+      const overlapsSlider = inSliderSpan(pz0) || inSliderSpan(pz1) || (slider !== null && pz0 < slider.z0 && pz1 > slider.z1);
+      if (!overlapsRamp && !overlapsDrop && !overlapsSplit && !overlapsRoute && !overlapsSlider) {
         pipes.push({ z0: pz0, z1: pz1, wallHeight: TRACK_GEN.pipeWallHeight });
       }
     }
@@ -491,6 +560,7 @@ function generateSegment(seed: number, index: number): Segment {
     if (overlapsRamp(z)) return;
     if (overlapsDrop(z)) return;
     if (inRouteSpan(z) || inRouteSpan(z + boostLength)) return;
+    if (inSliderSpan(z) || inSliderSpan(z + boostLength)) return;
     if (boosts.some((b) => z < b.z + b.length && z + boostLength > b.z)) return;
     const w = widthAt(z);
     const xMin = -w / 2 + boostWidth / 2 + 1;
@@ -551,6 +621,7 @@ function generateSegment(seed: number, index: number): Segment {
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (drops.some((d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (inRouteSpan(z)) continue;
+    if (inSliderSpan(z)) continue;
     const r = OBSTACLE_RADIUS[kind];
     if (boosts.some((b) => Math.abs(x - b.x) < b.width / 2 + r && z >= b.z - r && z <= b.z + b.length + r)) continue;
     obstacles.push({ id: `${index}-o${obstacles.length}`, kind, x, z, r });
@@ -572,7 +643,7 @@ function generateSegment(seed: number, index: number): Segment {
     const x = (rng() * 2 - 1) * (widthAt(startZ) / 2 - TRACK_GEN.coinXMargin);
     for (let k = 0; k < n; k++) {
       const z = startZ + k * TRACK_GEN.coinSpacing;
-      if (inDropSpan(z) || inRouteSpan(z)) continue;
+      if (inDropSpan(z) || inRouteSpan(z) || inSliderSpan(z)) continue;
       coins.push({ id: `${index}-l${line}-${k}`, x, z, lift: 0 });
     }
   }
@@ -636,6 +707,19 @@ function generateSegment(seed: number, index: number): Segment {
     });
   }
 
+  // Slider rewards (art §2): a centre coin line every sliderCoinSpacing between the blends, and
+  // one full-width boost pad near the entry. Deterministic (no rng), so nothing after this shifts.
+  if (slider) {
+    let sliderCoinCount = 0;
+    for (let z = slider.z0 + TRACK_GEN.sliderBlend; z <= slider.z1 - TRACK_GEN.sliderBlend; z += TRACK_GEN.sliderCoinSpacing) {
+      coins.push({ id: `${index}-sc${sliderCoinCount++}`, x: 0, z, lift: 0 });
+    }
+    boosts.push({
+      id: `${index}-sp`, x: 0, z: slider.z0 + TRACK_GEN.sliderPadOffset,
+      length: TRACK_GEN.boostLength, width: TRACK_GEN.sliderWidth,
+    });
+  }
+
   const gate: Gate | null = zone.z0 === z0 && zone.z0 > 0 ? { z: z0, zone: zone.id } : null;
 
   // Decor is purely visual (no collision) and is drawn last from the shared `rng`, after every
@@ -692,19 +776,39 @@ function generateSegment(seed: number, index: number): Segment {
         decor.push({ id: `${index}-d${dCount++}`, kind: 'temple', x: side * templeX, z, y: 0, scale: height });
       }
     }
+  } else if (zone.id === 'desert') {
+    // Desert decor (art §1): dunes on both banks (duneCountMin..+duneCountRange per side) plus a
+    // pyramid per side with pyramidChance probability, further out. Space has no decor at all.
+    for (const side of [1, -1]) {
+      const duneCount = TRACK_GEN.duneCountMin + Math.floor(rng() * TRACK_GEN.duneCountRange);
+      for (let k = 0; k < duneCount; k++) {
+        const x = side * (TRACK_GEN.duneXMin + rng() * TRACK_GEN.duneXRange);
+        const z = z0 + rng() * SEGMENT_LENGTH;
+        const scale = TRACK_GEN.duneScaleMin + rng() * TRACK_GEN.duneScaleRange;
+        decor.push({ id: `${index}-d${dCount++}`, kind: 'dune', x, z, y: 0, scale });
+      }
+      if (rng() < TRACK_GEN.pyramidChance) {
+        const x = side * (TRACK_GEN.pyramidXMin + rng() * TRACK_GEN.pyramidXRange);
+        const z = z0 + rng() * SEGMENT_LENGTH;
+        const scale = TRACK_GEN.pyramidScaleMin + rng() * TRACK_GEN.pyramidScaleRange;
+        decor.push({ id: `${index}-d${dCount++}`, kind: 'pyramid', x, z, y: 0, scale });
+      }
+    }
   }
 
-  // Distant cliff decor: every zone, both banks, drawn last (after every zone-specific decor
-  // above) so it never perturbs their draws.
-  const cliffPerSide = TRACK_GEN.cliffPerSideMin + Math.floor(rng() * TRACK_GEN.cliffPerSideRange);
-  for (const side of [1, -1]) {
-    const step = SEGMENT_LENGTH / cliffPerSide;
-    for (let k = 0; k < cliffPerSide; k++) {
-      const jitter = (rng() * 2 - 1) * step * EVEN_SPACING_JITTER_FRAC;
-      const z = z0 + step * (k + 0.5) + jitter;
-      const x = side * (TRACK_GEN.cliffXMin + rng() * TRACK_GEN.cliffXRange);
-      const scale = TRACK_GEN.cliffHeightMin + rng() * TRACK_GEN.cliffHeightRange;
-      decor.push({ id: `${index}-d${dCount++}`, kind: 'cliff', x, z, y: 0, scale });
+  // Distant cliff decor: both banks, drawn last (after every zone-specific decor above) so it
+  // never perturbs their draws. Only in zones that want it (art §1) - desert/space have none.
+  if (zone.cliffs) {
+    const cliffPerSide = TRACK_GEN.cliffPerSideMin + Math.floor(rng() * TRACK_GEN.cliffPerSideRange);
+    for (const side of [1, -1]) {
+      const step = SEGMENT_LENGTH / cliffPerSide;
+      for (let k = 0; k < cliffPerSide; k++) {
+        const jitter = (rng() * 2 - 1) * step * EVEN_SPACING_JITTER_FRAC;
+        const z = z0 + step * (k + 0.5) + jitter;
+        const x = side * (TRACK_GEN.cliffXMin + rng() * TRACK_GEN.cliffXRange);
+        const scale = TRACK_GEN.cliffHeightMin + rng() * TRACK_GEN.cliffHeightRange;
+        decor.push({ id: `${index}-d${dCount++}`, kind: 'cliff', x, z, y: 0, scale });
+      }
     }
   }
 
@@ -715,7 +819,7 @@ function generateSegment(seed: number, index: number): Segment {
 
   return {
     index, z0, z1, widthStart, widthEnd, split, pipes, corridorX, bumps, ice, ramps, obstacles, coins, boosts, drops,
-    zone: zone.id, gate, decor, route, slider: null,
+    zone: zone.id, gate, decor, route, slider,
   };
 }
 
@@ -798,7 +902,9 @@ export function createTrack(seed: number): Track {
   const widthAt = (z: number): number => {
     if (z < 0) return TRACK_WIDTH;
     const seg = getSegment(segmentIndexAt(z));
-    return widthAtInSegment(seg.z0, seg.z1, seg.widthStart, seg.widthEnd, z);
+    const base = widthAtInSegment(seg.z0, seg.z1, seg.widthStart, seg.widthEnd, z);
+    if (!seg.slider || z < seg.slider.z0 || z > seg.slider.z1) return base;
+    return base + (seg.slider.width - base) * sliderBlend(seg.slider, z);
   };
 
   const segmentsAround = (z: number): Segment[] => {
@@ -840,8 +946,16 @@ export function createTrack(seed: number): Track {
     });
   };
 
+  /** The slider section containing `z`, or null outside one (art §2). A slider never crosses a
+   * segment boundary (sliderMargin keeps it inside its segment). */
+  const sliderAt = (z: number): Slider | null => {
+    if (z < 0) return null;
+    const slider = getSegment(segmentIndexAt(z)).slider;
+    return slider && z >= slider.z0 && z <= slider.z1 ? slider : null;
+  };
+
   return {
     seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt,
-    routeAt, laneAt, onPillar,
+    routeAt, laneAt, onPillar, sliderAt,
   };
 }

@@ -74,10 +74,12 @@ describe('createTrack', () => {
     const expected10 = Math.round(
       (TRACK_GEN.obstacleBase + Math.floor(z10 / TRACK_GEN.obstaclePerMeters)) * zoneAt(z10).obstacleDensityMul,
     );
-    // A route section excludes ordinary obstacles from its span, so a routed segment may fall short.
-    if (t.getSegment(10).route) expect(nonWall(t.getSegment(10))).toBeLessThanOrEqual(expected10);
+    // A route section (or a slider, art §2) excludes ordinary obstacles from its span, so an
+    // affected segment may fall short.
+    if (t.getSegment(10).route || t.getSegment(10).slider) expect(nonWall(t.getSegment(10))).toBeLessThanOrEqual(expected10);
     else expect(nonWall(t.getSegment(10))).toBe(expected10);
-    expect(nonWall(t.getSegment(40))).toBe(TRACK_GEN.obstacleMax);
+    if (t.getSegment(40).route || t.getSegment(40).slider) expect(nonWall(t.getSegment(40))).toBeLessThanOrEqual(TRACK_GEN.obstacleMax);
+    else expect(nonWall(t.getSegment(40))).toBe(TRACK_GEN.obstacleMax);
   });
 
   it('does not put non-wall obstacles on ramps', () => {
@@ -315,6 +317,9 @@ describe('createTrack', () => {
       for (let i = 0; i < 5; i++) {
         const seg = t.getSegment(i);
         const mid = seg.z0 + SEGMENT_LENGTH / 2;
+        // corridorX is drawn from the segment's own (un-narrowed) width, before a slider (art §2)
+        // can narrow widthAt at that same z - skip the comparison when a slider covers mid.
+        if (seg.slider && mid >= seg.slider.z0 && mid <= seg.slider.z1) continue;
         const halfW = t.widthAt(mid) / 2;
         const cx = seg.corridorX;
         expect(Math.abs(cx)).toBeLessThanOrEqual(halfW + 1e-9);
@@ -463,12 +468,16 @@ describe('createTrack', () => {
     expect(found).toBe(true);
   });
 
-  it('widthAt stays within [widthMin, widthMax] and is continuous across segment boundaries', () => {
+  it('widthAt stays within [widthMin, widthMax] (or narrows to sliderWidth inside a slider) and is continuous across segment boundaries', () => {
     for (let seed = 1; seed <= 10; seed++) {
       const t = createTrack(seed);
       for (let z = 0; z < 15 * SEGMENT_LENGTH; z += 17) {
         const w = t.widthAt(z);
-        expect(w).toBeGreaterThanOrEqual(TRACK_GEN.widthMin - 1e-9);
+        const seg = t.getSegment(t.segmentIndexAt(z));
+        // A slider (art §2) narrows the track below widthMin, down to sliderWidth, inside its span.
+        const inSlider = seg.slider !== null && z >= seg.slider.z0 && z <= seg.slider.z1;
+        const lowerBound = inSlider ? TRACK_GEN.sliderWidth : TRACK_GEN.widthMin;
+        expect(w).toBeGreaterThanOrEqual(lowerBound - 1e-9);
         expect(w).toBeLessThanOrEqual(TRACK_GEN.widthMax + 1e-9);
       }
       for (let i = 1; i <= 14; i++) {
@@ -830,6 +839,98 @@ describe('route sections', () => {
         for (const p of seg.pipes) expect(p.z1 < lo || p.z0 > hi).toBe(true);
         for (const b of seg.bumps) expect(b.z + b.width < seg.route.z0 - TRACK_GEN.routeEntryRampLead || b.z - b.width > seg.route.z1).toBe(true);
       }
+    }
+  });
+});
+
+describe('slider sections', () => {
+  function findSlider(): { seg: Segment; t: Track } {
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 4; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (seg.slider) return { seg, t };
+      }
+    }
+    throw new Error('no slider section found');
+  }
+
+  it('only appears from sliderMinZ on and stays inside its segment with margins and length range', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.slider) continue;
+        expect(seg.z0).toBeGreaterThanOrEqual(TRACK_GEN.sliderMinZ);
+        expect(seg.slider.z0).toBeGreaterThanOrEqual(seg.z0 + TRACK_GEN.sliderMargin - 1e-9);
+        expect(seg.slider.z1).toBeLessThanOrEqual(seg.z1 - TRACK_GEN.sliderMargin + 1e-9);
+        const length = seg.slider.z1 - seg.slider.z0;
+        expect(length).toBeGreaterThanOrEqual(TRACK_GEN.sliderLenMin - 1e-9);
+        expect(length).toBeLessThanOrEqual(TRACK_GEN.sliderLenMin + TRACK_GEN.sliderLenRange + 1e-9);
+      }
+    }
+  });
+
+  it('widthAt narrows to sliderWidth at the span\'s midpoint', () => {
+    const { seg, t } = findSlider();
+    const mid = (seg.slider!.z0 + seg.slider!.z1) / 2;
+    expect(t.widthAt(mid)).toBe(TRACK_GEN.sliderWidth);
+  });
+
+  it('heightAt at the midpoint is sliderHeight higher on the deck (x=0) than off it (x=8, outside the edge fall)', () => {
+    const { seg, t } = findSlider();
+    const mid = (seg.slider!.z0 + seg.slider!.z1) / 2;
+    expect(t.heightAt(mid, 0)).toBeCloseTo(t.heightAt(mid, 8) + TRACK_GEN.sliderHeight, 6);
+  });
+
+  it('sliderAt reports the slider inside its span and null outside', () => {
+    const { seg, t } = findSlider();
+    const mid = (seg.slider!.z0 + seg.slider!.z1) / 2;
+    expect(t.sliderAt(mid)).toBe(seg.slider);
+    expect(t.sliderAt(seg.slider!.z0 - 1)).toBeNull();
+    expect(t.sliderAt(seg.slider!.z1 + 1)).toBeNull();
+  });
+
+  it('has no obstacle inside the span, and has centre coins plus an entry boost pad inside it', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 4; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.slider) continue;
+        for (const o of seg.obstacles) {
+          expect(o.z >= seg.slider.z0 && o.z <= seg.slider.z1).toBe(false);
+        }
+        const hasCoinInSpan = seg.coins.some((c) => c.z >= seg.slider!.z0 && c.z <= seg.slider!.z1);
+        expect(hasCoinInSpan).toBe(true);
+        const pad = seg.boosts.find((b) => b.id === `${seg.index}-sp`);
+        expect(pad).toBeDefined();
+        expect(pad!.z).toBeGreaterThanOrEqual(seg.slider.z0);
+        expect(pad!.z).toBeLessThanOrEqual(seg.slider.z1);
+      }
+    }
+  });
+
+  it('never coincides with a route section, a pipe or a drop in the same segment', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.slider) continue;
+        expect(seg.route).toBeNull();
+        for (const p of seg.pipes) {
+          expect(p.z1 < seg.slider.z0 || p.z0 > seg.slider.z1).toBe(true);
+        }
+        for (const d of seg.drops) {
+          expect(d.z + d.length < seg.slider.z0 || d.z > seg.slider.z1).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('keeps the whole suite green: determinism still holds with sliders in the mix', () => {
+    const a = createTrack(21), b = createTrack(21);
+    for (let i = 0; i < 30; i++) {
+      expect(JSON.stringify(a.getSegment(i))).toBe(JSON.stringify(b.getSegment(i)));
     }
   });
 });
