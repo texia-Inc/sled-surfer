@@ -10,6 +10,9 @@ export interface EffectsInput {
   hitCount: number;
   /** Cumulative count of broken obstacles this run; a burst fires when it increases. */
   breakCount: number;
+  /** Cumulative count of route-hazard wipeouts this run; a dark-red burst fires when it
+   * increases (terrain routes §2/§4). */
+  wipeoutCount: number;
   dt: number;
 }
 
@@ -37,6 +40,13 @@ const BREAK_BURST_COUNT = 30;
 const BREAK_BURST_LIFE = 0.7;
 const BREAK_BURST_SPEED = 3;
 const BREAK_BURST_COLOR = 0xd9a05b;
+
+/** Wipeout burst (terrain routes §4): dark-red particles, same spread pattern as the boost
+ * burst, fired when RunState.wipeoutCount increases. */
+const WIPEOUT_BURST_CAPACITY = 40;
+const WIPEOUT_BURST_COUNT = 40;
+const WIPEOUT_BURST_LIFE = 0.6;
+const WIPEOUT_BURST_COLOR = 0x8a1414;
 
 const LINE_COUNT = 24;
 const LINE_RADIUS_MIN = 3.5;
@@ -151,16 +161,19 @@ export class Effects {
   private readonly spray = new ParticlePool(SPRAY_CAPACITY, 0xffffff, SPRAY_SIZE);
   private readonly burst = new ParticlePool(BURST_CAPACITY, 0x8ff4ff, BURST_SIZE);
   private readonly breakBurst = new ParticlePool(BREAK_BURST_CAPACITY, BREAK_BURST_COLOR, BURST_SIZE);
+  private readonly wipeoutBurst = new ParticlePool(WIPEOUT_BURST_CAPACITY, WIPEOUT_BURST_COLOR, BURST_SIZE);
   private readonly lines: SpeedLines;
   private spraySpawnAccum = 0;
   private lastBoostHits = 0;
   private lastLandingCount = 0;
   private lastBreakCount = 0;
+  private lastWipeoutCount = 0;
 
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     scene.add(this.spray.points);
     scene.add(this.burst.points);
     scene.add(this.breakBurst.points);
+    scene.add(this.wipeoutBurst.points);
     this.lines = new SpeedLines(camera);
   }
 
@@ -228,9 +241,25 @@ export class Effects {
       this.lastBreakCount = i.breakCount;
     }
 
+    if (i.wipeoutCount !== this.lastWipeoutCount) {
+      if (i.wipeoutCount > this.lastWipeoutCount) {
+        for (let k = 0; k < WIPEOUT_BURST_COUNT; k++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = 2 + Math.random() * 2;
+          this.wipeoutBurst.spawn(
+            i.x, i.y + 0.2, -i.z,
+            Math.cos(angle) * r, 1 + Math.random() * 2, Math.sin(angle) * r,
+            WIPEOUT_BURST_LIFE,
+          );
+        }
+      }
+      this.lastWipeoutCount = i.wipeoutCount;
+    }
+
     this.spray.step(i.dt);
     this.burst.step(i.dt);
     this.breakBurst.step(i.dt);
+    this.wipeoutBurst.step(i.dt);
     this.lines.update(i.speed, i.boosting, i.dt);
   }
 
@@ -238,6 +267,7 @@ export class Effects {
     this.spray.dispose();
     this.burst.dispose();
     this.breakBurst.dispose();
+    this.wipeoutBurst.dispose();
     this.lines.dispose();
   }
 }

@@ -24,6 +24,8 @@ const STEER_SMOOTH_RATE = 10;
 /** Camera shake is triggered by collisions only (terrain §2); boost/landing/break no longer
  * shake the camera. */
 const SHAKE_STUN = 1.0;
+/** Camera shake on a route-hazard wipeout (terrain routes §4), on top of any stun shake. */
+const SHAKE_WIPEOUT = 0.8;
 const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 const CAMERA_MODE_KEY = 'sled-surfer:camera:v1';
 const DEFAULT_CAMERA_MODE: CameraMode = 'full';
@@ -145,6 +147,7 @@ function boot(): void {
   let pullShown = 0;
   let pendingRocket = false;
   let lastStunTime = 0;
+  let lastWipeoutCount = 0;
 
   function frame(now: number): void {
     const frameDt = Math.min(MAX_FRAME_DT, (now - last) / 1000);
@@ -197,8 +200,11 @@ function boot(): void {
     if (run) {
       if (run.stunTime > 0 && lastStunTime === 0) shake = Math.max(shake, SHAKE_STUN);
       lastStunTime = run.stunTime;
+      if (run.wipeoutCount > lastWipeoutCount) shake = Math.max(shake, SHAKE_WIPEOUT);
+      lastWipeoutCount = run.wipeoutCount;
     } else {
       lastStunTime = 0;
+      lastWipeoutCount = 0;
     }
 
     (scene.background as THREE.Color).copy(blendedThemeColor(z, (t) => t.sky, skyTmp));
@@ -235,6 +241,7 @@ function boot(): void {
       landingCount: run ? run.landingCount : 0,
       hitCount: 0,
       breakCount: run ? run.breakCount : 0,
+      wipeoutCount: run ? run.wipeoutCount : 0,
       dt: frameDt,
     });
     updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt }, frameDt);

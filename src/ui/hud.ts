@@ -10,6 +10,10 @@ const SPEED_HOT = 100;
 const ZONE_BANNER_SECONDS = 2.0;
 const COIN_TOAST_SECONDS = 0.6;
 const COIN_TOAST_TEXT = '+2';
+/** Wipeout toast/flash duration (terrain routes §4): text for 0.8s, flash fade handled by CSS
+ * (.flash.on's animation runs 0.3s). */
+const WIPEOUT_TOAST_SECONDS = 0.8;
+const WIPEOUT_TOAST_TEXT = 'WIPEOUT!';
 
 export class Hud {
   private readonly root: HTMLElement;
@@ -24,6 +28,8 @@ export class Hud {
   private readonly chain: HTMLElement;
   private readonly zone: HTMLElement;
   private readonly coinToast: HTMLElement;
+  private readonly flash: HTMLElement;
+  private readonly wipeoutToast: HTMLElement;
   private toastUntil = 0;
   private lastLandingCount = 0;
   private chainPopUntil = 0;
@@ -32,6 +38,8 @@ export class Hud {
   private zoneUntil = 0;
   private lastBreakCount = 0;
   private coinToastUntil = 0;
+  private lastWipeoutCount = 0;
+  private wipeoutToastUntil = 0;
 
   constructor(parent: HTMLElement, onRocket: () => void, onCameraToggle: () => void) {
     this.root = document.createElement('div');
@@ -42,6 +50,8 @@ export class Hud {
       <div class="progress"><div class="fill"></div><div class="flag">🏁</div><div class="pct">0%</div></div>
       <button class="rocket" type="button">🚀</button>
       <div class="toast"></div>
+      <div class="wipeout-toast"></div>
+      <div class="flash"></div>
       <div class="chain"></div>
       <div class="zone"></div>
     `;
@@ -56,6 +66,8 @@ export class Hud {
     this.chain = this.root.querySelector<HTMLElement>('.chain')!;
     this.zone = this.root.querySelector<HTMLElement>('.zone')!;
     this.coinToast = this.root.querySelector<HTMLElement>('.coin-toast')!;
+    this.flash = this.root.querySelector<HTMLElement>('.flash')!;
+    this.wipeoutToast = this.root.querySelector<HTMLElement>('.wipeout-toast')!;
     this.camToggle = this.root.querySelector<HTMLButtonElement>('.cam-toggle')!;
     this.rocket.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
@@ -100,6 +112,18 @@ export class Hud {
     }
     if (!run) this.lastBreakCount = 0;
     this.coinToast.classList.toggle('on', performance.now() < this.coinToastUntil);
+
+    if (run && run.wipeoutCount !== this.lastWipeoutCount) {
+      this.lastWipeoutCount = run.wipeoutCount;
+      this.wipeoutToast.textContent = WIPEOUT_TOAST_TEXT;
+      this.wipeoutToastUntil = performance.now() + WIPEOUT_TOAST_SECONDS * 1000;
+      // Restart the flash's fade-out animation even if it's still mid-fade from a previous hit.
+      this.flash.classList.remove('on');
+      void this.flash.offsetWidth;
+      this.flash.classList.add('on');
+    }
+    if (!run) this.lastWipeoutCount = 0;
+    this.wipeoutToast.classList.toggle('on', performance.now() < this.wipeoutToastUntil);
 
     const chainActive = !!run && run.boostChainTime > 0 && run.boostChain > 0;
     if (run && run.boostCount !== this.lastBoostCount) {
