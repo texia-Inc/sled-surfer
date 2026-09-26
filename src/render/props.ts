@@ -83,6 +83,26 @@ const STALAGMITE_RADIUS = 0.7;
 const STALAGMITE_HEIGHT = 2.4;
 const CRYSTAL_RADIUS = 0.8;
 
+// --- Volcano obstacle geometry constants ---
+const TOTEM_RADIUS = 0.6;
+const TOTEM_HEIGHT = 2.6;
+const TOTEM_COLOR = 0x8a5a34;
+const TOTEM_FACE_SIZE = { w: 0.9, h: 0.5, d: 0.2 };
+const TOTEM_FACE_COLOR = 0x2a1c12;
+const PALM_TRUNK_RADIUS = 0.2;
+const PALM_TRUNK_HEIGHT = 3;
+const PALM_TRUNK_COLOR = 0x8a6a3a;
+const PALM_FROND_COUNT = 5;
+const PALM_FROND_SIZE = { w: 1.4, h: 0.12, d: 0.4 };
+const PALM_FROND_COLOR = 0x2f8f4e;
+const PALM_FROND_TILT = 0.5;
+
+// --- Temple decor geometry constants ---
+const TEMPLE_SIZE = { w: 7, d: 7 };
+const TEMPLE_COLOR = 0x8b8a86;
+const TEMPLE_TOP_SCALE = 0.5;
+const TEMPLE_TOP_HEIGHT_SCALE = 0.4;
+
 // --- Route section geometry constants (terrain routes §4) ---
 const ROUTE_WALL_BLOCK = { w: 2.5, h: 4.5, d: 2.5 };
 const ROUTE_WALL_SPACING = 3;
@@ -199,6 +219,13 @@ export class PropManager {
   private readonly stalagmiteGeo = new THREE.ConeGeometry(STALAGMITE_RADIUS, STALAGMITE_HEIGHT, 7);
   private readonly crystalGeo = new THREE.OctahedronGeometry(CRYSTAL_RADIUS, 0);
 
+  // --- Volcano obstacle/decor geometries ---
+  private readonly totemGeo = new THREE.CylinderGeometry(TOTEM_RADIUS, TOTEM_RADIUS, TOTEM_HEIGHT, 8);
+  private readonly totemFaceGeo = new THREE.BoxGeometry(TOTEM_FACE_SIZE.w, TOTEM_FACE_SIZE.h, TOTEM_FACE_SIZE.d);
+  private readonly palmTrunkGeo = new THREE.CylinderGeometry(PALM_TRUNK_RADIUS * 0.6, PALM_TRUNK_RADIUS, PALM_TRUNK_HEIGHT, 6);
+  private readonly palmFrondGeo = new THREE.BoxGeometry(PALM_FROND_SIZE.w, PALM_FROND_SIZE.h, PALM_FROND_SIZE.d);
+  private readonly templeGeo = new THREE.BoxGeometry(TEMPLE_SIZE.w, 1, TEMPLE_SIZE.d);
+
   // --- Route section geometries (terrain routes §4) ---
   private readonly routeWallGeo = new THREE.BoxGeometry(ROUTE_WALL_BLOCK.w, ROUTE_WALL_BLOCK.h, ROUTE_WALL_BLOCK.d);
   private readonly routePillarGeo = new THREE.CylinderGeometry(
@@ -278,6 +305,13 @@ export class PropManager {
   private readonly matBarrierStripe = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   private readonly matStalagmite = new THREE.MeshLambertMaterial({ color: 0x5c6b7a, flatShading: true });
   private readonly matCrystal = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
+
+  // --- Volcano obstacle/decor materials ---
+  private readonly matTotem = new THREE.MeshLambertMaterial({ color: TOTEM_COLOR, flatShading: true });
+  private readonly matTotemFace = new THREE.MeshLambertMaterial({ color: TOTEM_FACE_COLOR, flatShading: true });
+  private readonly matPalmTrunk = new THREE.MeshLambertMaterial({ color: PALM_TRUNK_COLOR, flatShading: true });
+  private readonly matPalmFrond = new THREE.MeshLambertMaterial({ color: PALM_FROND_COLOR, flatShading: true });
+  private readonly matTemple = new THREE.MeshLambertMaterial({ color: TEMPLE_COLOR, flatShading: true });
 
   // --- Route section materials (terrain routes §4) ---
   private readonly matRouteWall = new THREE.MeshLambertMaterial({ color: ROUTE_WALL_COLOR, flatShading: true });
@@ -508,6 +542,10 @@ export class PropManager {
           post.position.set(px, FENCE_POST_SIZE.h / 2, 0);
           holder.add(post);
         }
+      } else if (o.kind === 'totem') {
+        holder.add(this.buildTotemMesh());
+      } else if (o.kind === 'palm') {
+        holder.add(this.buildPalmMesh());
       } else {
         const base = new THREE.Mesh(this.ball, this.matSnow);
         base.position.y = 0.5;
@@ -590,6 +628,36 @@ export class PropManager {
     if (seg.route) this.buildRoute(group, seg.route);
 
     return { group, coins, obstacles };
+  }
+
+  /** Trunk (tapered cylinder) plus 5 flat frond boxes radiating from the top, shared by the
+   * `palm` obstacle and the `palm` decor (which scales the whole group by `d.scale`). */
+  private buildPalmMesh(): THREE.Group {
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(this.palmTrunkGeo, this.matPalmTrunk);
+    trunk.position.y = PALM_TRUNK_HEIGHT / 2;
+    g.add(trunk);
+    for (let k = 0; k < PALM_FROND_COUNT; k++) {
+      const frond = new THREE.Mesh(this.palmFrondGeo, this.matPalmFrond);
+      frond.position.set(0, PALM_TRUNK_HEIGHT, 0);
+      frond.rotation.y = (k / PALM_FROND_COUNT) * Math.PI * 2;
+      frond.rotation.z = PALM_FROND_TILT;
+      frond.translateX(PALM_FROND_SIZE.w / 2);
+      g.add(frond);
+    }
+    return g;
+  }
+
+  /** Cylinder body plus a dark box "face" band, used by the `totem` obstacle. */
+  private buildTotemMesh(): THREE.Group {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(this.totemGeo, this.matTotem);
+    body.position.y = TOTEM_HEIGHT / 2;
+    g.add(body);
+    const face = new THREE.Mesh(this.totemFaceGeo, this.matTotemFace);
+    face.position.set(0, TOTEM_HEIGHT * 0.55, TOTEM_RADIUS + TOTEM_FACE_SIZE.d / 2);
+    g.add(face);
+    return g;
   }
 
   /** Ridge-wall rock blocks, pillar cylinders/caps and the entry signpost for a route section
@@ -704,6 +772,21 @@ export class PropManager {
       );
       cliffTop.rotation.y = rotY;
       group.add(cliffTop);
+    } else if (d.kind === 'palm') {
+      const holder = this.buildPalmMesh();
+      holder.position.set(d.x, ground, -d.z);
+      holder.scale.setScalar(d.scale);
+      group.add(holder);
+    } else if (d.kind === 'temple') {
+      const body = new THREE.Mesh(this.templeGeo, this.matTemple);
+      body.scale.y = d.scale;
+      body.position.set(d.x, ground + d.scale / 2, -d.z);
+      group.add(body);
+      const topHeight = d.scale * TEMPLE_TOP_HEIGHT_SCALE;
+      const top = new THREE.Mesh(this.templeGeo, this.matTemple);
+      top.scale.set(TEMPLE_TOP_SCALE, topHeight, TEMPLE_TOP_SCALE);
+      top.position.set(d.x, ground + d.scale + topHeight / 2, -d.z);
+      group.add(top);
     } else if (d.kind === 'signpost') {
       const holder = new THREE.Group();
       holder.position.set(d.x, ground, -d.z);
