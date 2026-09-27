@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_SMALL, RAMP_BIG, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
-  TRACK_BEND, bendPhases,
+  TRACK_BEND, bendPhases, bendMulAt,
 } from '../src/core/track';
 import { zoneAt, ZONES } from '../src/core/zones';
 import type { Segment, Track } from '../src/core/types';
@@ -117,16 +117,19 @@ describe('createTrack', () => {
   });
 
   it('every segment 0..20 has 1-2 base ramps, each a small or big template, ids unique per segment', () => {
-    // A split's own right-lane ramp (id `${index}-rs0`, terrain §4) is a distinct feature, not
-    // part of the "1-2 guaranteed ramps" contract, so it's excluded from the count/template check
-    // (ids overall - including it - must still all be unique).
+    // A split's own right-lane ramp (id `${index}-rs0`, terrain §4) and the stairs ramps (also
+    // `-rs`, canyon design §3) are a distinct feature, not part of the "1-2 guaranteed ramps"
+    // contract, so they're excluded from the count/template check (ids overall - including them -
+    // must still all be unique). Same for a canyon's own entry ramp (`-cr`, canyon design §2).
     const t = createTrack(11);
     for (let i = 0; i <= 20; i++) {
       const s = t.getSegment(i);
-      const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re'));
+      const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re') && !r.id.includes('-cr'));
       // A routed segment may have no free ramp at all (the route span excludes them) - it has
-      // the route entry/pillar ramps instead.
-      expect(baseRamps.length).toBeGreaterThanOrEqual(s.route ? 0 : 1);
+      // the route entry/pillar ramps instead. A stairs segment (canyon design §3) can likewise
+      // have none: stairsCount (3) is subtracted from the free-ramp target, which floors at 0.
+      const hasStairs = s.ramps.some((r) => r.id === `${s.index}-rs0`);
+      expect(baseRamps.length).toBeGreaterThanOrEqual(s.route || hasStairs ? 0 : 1);
       expect(baseRamps.length).toBeLessThanOrEqual(2);
       const ids = new Set(s.ramps.map((r) => r.id));
       expect(ids.size).toBe(s.ramps.length);
@@ -143,7 +146,7 @@ describe('createTrack', () => {
       const t = createTrack(seed);
       for (let i = 0; i <= 20; i++) {
         const s = t.getSegment(i);
-        const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re'));
+        const baseRamps = s.ramps.filter((r) => !r.id.includes('-rs') && !r.id.includes('-pr') && !r.id.endsWith('-re') && !r.id.includes('-cr'));
         if (baseRamps.length < 2) continue;
         const zs = baseRamps.map((r) => r.z).sort((a, b) => a - b);
         for (let k = 1; k < zs.length; k++) {
@@ -422,7 +425,8 @@ describe('createTrack', () => {
           expect(r.x + r.width / 2).toBeLessThanOrEqual(w / 2 + 1e-9);
           const matchesSmall = r.width === TRACK_GEN.rampWidth;
           const matchesBig = r.width === TRACK_GEN.rampBigWidth;
-          const matchesRoute = r.width === TRACK_GEN.pillarRampWidth || r.width === TRACK_GEN.routeEntryRampWidth;
+          const matchesRoute = r.width === TRACK_GEN.pillarRampWidth || r.width === TRACK_GEN.routeEntryRampWidth
+            || r.width === TRACK_GEN.canyonRampWidth || r.width === TRACK_GEN.stairsRampWidth;
           expect(matchesSmall || matchesBig || matchesRoute).toBe(true);
           // Route ramps sit on lanes whose neighbours can be higher (ridge); the lane comparison is
           // covered by the route-section tests instead.
@@ -743,6 +747,9 @@ describe('route sections', () => {
   }
 
   it('only appears from routeMinZ on and stays inside its segment with margins', () => {
+    // A canyon (canyon design §2) is also a RouteSection (route.canyon), but with its own,
+    // much shorter length rule (canyonGapMin..+canyonGapRange) instead of routeLenMin - checked
+    // separately below.
     for (let seed = 1; seed <= 4; seed++) {
       const t = createTrack(seed);
       for (let i = 0; i < 40; i++) {
@@ -751,7 +758,13 @@ describe('route sections', () => {
         expect(seg.z0).toBeGreaterThanOrEqual(TRACK_GEN.routeMinZ);
         expect(seg.route.z0).toBeGreaterThanOrEqual(seg.z0 + TRACK_GEN.routeMargin - 1e-9);
         expect(seg.route.z1).toBeLessThanOrEqual(seg.z1 - TRACK_GEN.routeMargin + 1e-9);
-        expect(seg.route.z1 - seg.route.z0).toBeGreaterThanOrEqual(TRACK_GEN.routeLenMin - 1e-9);
+        if (seg.route.canyon) {
+          const gapLen = seg.route.z1 - seg.route.z0;
+          expect(gapLen).toBeGreaterThanOrEqual(TRACK_GEN.canyonGapMin - 1e-9);
+          expect(gapLen).toBeLessThanOrEqual(TRACK_GEN.canyonGapMin + TRACK_GEN.canyonGapRange + 1e-9);
+        } else {
+          expect(seg.route.z1 - seg.route.z0).toBeGreaterThanOrEqual(TRACK_GEN.routeLenMin - 1e-9);
+        }
       }
     }
   });
@@ -834,7 +847,9 @@ describe('route sections', () => {
         // within routeApproachClear before the section.
         for (const d of seg.drops) expect(d.z + d.length < seg.route.z0 - TRACK_GEN.routeApproachClear || d.z > seg.route.z1).toBe(true);
         for (const r of seg.ramps) {
-          if (r.id.includes('-pr') || r.id.endsWith('-re')) continue;
+          // A canyon's own entry ramp (`-cr`, canyon design §2) is the route's own big ramp,
+          // like `-pr`/`-re` are for a multi-lane route - not a stray free ramp.
+          if (r.id.includes('-pr') || r.id.endsWith('-re') || r.id.includes('-cr')) continue;
           if (r.height === RAMP_BIG.height) expect(r.z < seg.route.z0 - TRACK_GEN.routeApproachClear || r.z > seg.route.z1).toBe(true);
         }
         for (const p of seg.pipes) expect(p.z1 < lo || p.z0 > hi).toBe(true);
@@ -945,10 +960,14 @@ describe('curved track world bend (centerAt/centerSlopeAt/bendPhases)', () => {
     for (const z of [-1, -50, -500]) expect(t.centerAt(z)).toBe(0);
   });
 
-  it('never exceeds the sum of the two amplitudes', () => {
+  it('never exceeds the sum of the two amplitudes times the strongest zone\'s bendMul', () => {
+    // Per-zone bend strength (canyon design §1) can scale the raw sine sum up (space's bendMul
+    // 1.6) or down (city's 0.5), so the bound is the two amplitudes times the largest bendMul
+    // across every zone, not the raw amplitude sum on its own.
     const t = createTrack(9);
+    const maxMul = Math.max(...ZONES.map((z) => z.bendMul));
     for (let z = 0; z <= 6000; z += 17) {
-      expect(Math.abs(t.centerAt(z))).toBeLessThanOrEqual(MAX_AMP + 1e-9);
+      expect(Math.abs(t.centerAt(z))).toBeLessThanOrEqual(MAX_AMP * maxMul + 1e-9);
     }
   });
 
@@ -984,5 +1003,113 @@ describe('curved track world bend (centerAt/centerSlopeAt/bendPhases)', () => {
       const num = (t.centerAt(z + 0.05) - t.centerAt(z - 0.05)) / 0.1;
       expect(Math.abs(num - t.centerSlopeAt(z))).toBeLessThan(1e-2);
     }
+  });
+});
+
+describe('bendMulAt (canyon design §1)', () => {
+  it('returns the desert zone\'s own bendMul well past the zone-blend distance', () => {
+    expect(bendMulAt(4500)).toBe(1.4);
+  });
+
+  it('returns the first zone\'s (snowfield) own bendMul, unblended', () => {
+    expect(bendMulAt(50)).toBe(0.6);
+  });
+
+  it('is continuous across every zone boundary (1m-step difference stays small)', () => {
+    for (const zone of ZONES) {
+      if (zone.z0 === 0) continue;
+      for (let z = zone.z0 - 5; z < zone.z0 + 150; z += 1) {
+        expect(Math.abs(bendMulAt(z + 1) - bendMulAt(z))).toBeLessThan(0.05);
+      }
+    }
+  });
+});
+
+describe('canyon sections (canyon design §2)', () => {
+  function findCanyon(): { seg: Segment; t: Track } {
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = createTrack(seed);
+      for (let i = 5; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (seg.route && seg.route.canyon) return { seg, t };
+      }
+    }
+    throw new Error('no canyon section found');
+  }
+
+  it('only appears from canyonMinZ on, as a single full-width hazard lane with no pillars', () => {
+    let found = false;
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (!seg.route || !seg.route.canyon) continue;
+        found = true;
+        expect(seg.z0).toBeGreaterThanOrEqual(TRACK_GEN.canyonMinZ);
+        expect(seg.route.lanes.length).toBe(1);
+        const lane = seg.route.lanes[0];
+        expect(lane.kind).toBe('pillars');
+        expect(lane.yOffset).toBe(-TRACK_GEN.hazardDepth);
+        const w = t.widthAt(seg.route.z0);
+        expect(lane.xMin).toBeCloseTo(-w / 2, 6);
+        expect(lane.xMax).toBeCloseTo(w / 2, 6);
+        expect(seg.route.pillars.length).toBe(0);
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('has a RAMP_BIG entry ramp ending 1m before the gap, canyonRampWidth wide, at x=0', () => {
+    const { seg } = findCanyon();
+    const route = seg.route!;
+    const ramp = seg.ramps.find((r) => r.id === `${seg.index}-cr`);
+    expect(ramp).toBeDefined();
+    expect(ramp!.length).toBe(RAMP_BIG.length);
+    expect(ramp!.height).toBe(RAMP_BIG.height);
+    expect(ramp!.width).toBe(TRACK_GEN.canyonRampWidth);
+    expect(ramp!.x).toBe(0);
+    expect(ramp!.z + ramp!.length).toBeCloseTo(route.z0 - 1, 6);
+  });
+
+  it('places an arc of coins across the whole gap, x=0, canyonCoinSpacing apart, peaking near canyonCoinLift', () => {
+    const { seg } = findCanyon();
+    const route = seg.route!;
+    const coins = seg.coins.filter((c) => c.id.includes('-cc'));
+    expect(coins.length).toBeGreaterThan(0);
+    for (const c of coins) {
+      expect(c.x).toBe(0);
+      expect(c.z).toBeGreaterThanOrEqual(route.z0 - 1e-9);
+      expect(c.z).toBeLessThanOrEqual(route.z1 + 1e-9);
+      expect(c.lift).toBeGreaterThanOrEqual(-1e-9);
+      expect(c.lift).toBeLessThanOrEqual(TRACK_GEN.canyonCoinLift + 1e-9);
+    }
+    expect(Math.max(...coins.map((c) => c.lift))).toBeGreaterThan(TRACK_GEN.canyonCoinLift * 0.8);
+  });
+});
+
+describe('stairs sections (canyon design §3)', () => {
+  it('places stairsCount equally spaced ramps at the same x/width, never alongside a route or slider', () => {
+    let found = false;
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = createTrack(seed);
+      for (let i = 0; i < 60; i++) {
+        const seg = t.getSegment(i);
+        const stairs = Array.from({ length: TRACK_GEN.stairsCount }, (_, k) => seg.ramps.find((r) => r.id === `${seg.index}-rs${k}`));
+        if (stairs.some((r) => !r)) continue;
+        found = true;
+        for (const r of stairs) {
+          expect(r!.x).toBe(0);
+          expect(r!.width).toBe(TRACK_GEN.stairsRampWidth);
+          expect(r!.length).toBe(RAMP_SMALL.length);
+          expect(r!.height).toBe(RAMP_SMALL.height);
+        }
+        for (let k = 1; k < stairs.length; k++) {
+          expect(stairs[k]!.z - stairs[k - 1]!.z).toBeCloseTo(TRACK_GEN.stairsSpacing, 6);
+        }
+        expect(seg.route).toBeNull();
+        expect(seg.slider).toBeNull();
+      }
+    }
+    expect(found).toBe(true);
   });
 });

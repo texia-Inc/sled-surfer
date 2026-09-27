@@ -205,7 +205,10 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   }
 
   // Wipeout (routes §2): resting on a hazard floor (pillars lane, not on a pillar) throws the
-  // sled back onto the nearest solid lane with a stun and a speed cap; the run continues.
+  // sled back onto the nearest solid lane with a stun and a speed cap; the run continues. A
+  // canyon (canyon design §2) has no other lane to fall back onto - instead of stalling in the
+  // gap (which a return to the near bank would repeat forever, having lost too much speed to
+  // clear it again), it carries the sled onto the far bank at full wipeoutSpeed.
   if (s.grounded && track.laneAt && track.onPillar) {
     const lane = track.laneAt(s.z, s.x);
     if (lane && lane.kind === 'pillars' && !track.onPillar(s.z, s.x)) {
@@ -218,10 +221,15 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
           return Math.abs(c - s.x) < Math.abs(bc - s.x) ? l : best;
         });
         s.x = (nearest.xMin + nearest.xMax) / 2;
+        s.vz = Math.min(s.vz, p.wipeoutSpeed);
+      } else if (route) {
+        s.z = route.z1 + 2;
+        s.vz = p.wipeoutSpeed;
+      } else {
+        s.vz = Math.min(s.vz, p.wipeoutSpeed);
       }
       s.y = track.heightAt(s.z, s.x);
       s.vx = 0;
-      s.vz = Math.min(s.vz, p.wipeoutSpeed);
       s.stunTime = Math.max(s.stunTime, p.wipeoutStun);
       s.wipeoutCount += 1;
     }

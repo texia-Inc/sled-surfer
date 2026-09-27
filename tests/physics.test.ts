@@ -640,6 +640,36 @@ describe('route sections: walls and wipeouts', () => {
   });
 });
 
+describe('canyon wipeout (canyon design §2)', () => {
+  // A canyon route: a single full-width `pillars` lane, no pillars, no other lane to fall back
+  // onto - unlike the multi-lane route wipeout above, this must carry the sled to the far bank.
+  const canyonRoute: RouteSection = {
+    z0: 20, z1: 50, lanes: [{ xMin: -10, xMax: 10, yOffset: -6, kind: 'pillars' }], pillars: [], hazard: 'chasm', canyon: true,
+  };
+  const height = (z: number): number => (z < canyonRoute.z0 || z > canyonRoute.z1 ? 0 : -6);
+  function canyonTrack(): TrackQuery {
+    return {
+      ...fakeTrack(height),
+      routeAt: (z) => (z >= canyonRoute.z0 && z <= canyonRoute.z1 ? canyonRoute : null),
+      laneAt: (z) => (z >= canyonRoute.z0 && z <= canyonRoute.z1 ? canyonRoute.lanes[0] : null),
+      onPillar: () => false,
+    };
+  }
+
+  it('carries the sled to the far bank (route.z1 + 2) at wipeoutSpeed instead of falling back', () => {
+    const s = grounded({ vz: 25, z: 30, x: 3, y: -6 });
+    const track = canyonTrack();
+    stepRun(s, { steer: 0, rocket: false }, DT, track, DEFAULT_PHYSICS);
+    expect(s.wipeoutCount).toBe(1);
+    expect(s.z).toBeCloseTo(canyonRoute.z1 + 2, 5);
+    expect(s.vz).toBe(DEFAULT_PHYSICS.wipeoutSpeed);
+    expect(s.vx).toBe(0);
+    expect(s.x).toBe(3);
+    expect(s.y).toBeCloseTo(height(canyonRoute.z1 + 2), 6);
+    expect(s.stunTime).toBeCloseTo(DEFAULT_PHYSICS.wipeoutStun, 2);
+  });
+});
+
 describe('air steering', () => {
   it('steering while airborne drifts the sled sideways', () => {
     const s = grounded({ vz: 20 });

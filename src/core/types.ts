@@ -19,9 +19,11 @@ export interface Lane { xMin: number; xMax: number; yOffset: number; kind: LaneK
 export interface Pillar { id: string; x: number; z: number; radius: number; yOffset: number; }
 /** A multi-height route section (terrain routes §1): lanes partition the track width; pillars sit
  * in the `pillars` lane's hazard floor. `hazard` is the fluff at the pillar lane's floor ('lava'
- * in the volcano zone, 'chasm' elsewhere). */
+ * in the volcano zone, 'chasm' elsewhere). `canyon` marks a canyon-jump section (canyon design
+ * §2): a single full-width `pillars` lane with no pillars, spanning a gap to jump across. */
 export interface RouteSection {
   z0: number; z1: number; lanes: Lane[]; pillars: Pillar[]; hazard: 'lava' | 'chasm';
+  canyon?: true;
 }
 
 /** A narrow elevated slide (art §2): widthAt narrows to `width` and heightAt rises by `yOffset`

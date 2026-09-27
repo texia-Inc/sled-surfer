@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { zoneAt, zoneIndex, ZONE_GOALS } from '../src/core/zones';
+import { zoneAt, zoneIndex, ZONE_GOALS, ZONES } from '../src/core/zones';
 import { nextGoal } from '../src/core/game';
 import { GOAL } from '../src/core/params';
 
@@ -54,5 +54,14 @@ describe('art zones', () => {
   it('desert and space goals follow the volcano goal', () => {
     expect(nextGoal(4500)).toBe(5000);
     expect(nextGoal(5500)).toBe(6000);
+  });
+});
+
+describe('per-zone bend strength (canyon design §1)', () => {
+  it('matches the design doc\'s bendMul per zone', () => {
+    const expected: Record<string, number> = {
+      snowfield: 0.6, forest: 1.0, city: 0.5, cave: 1.0, volcano: 1.0, desert: 1.4, space: 1.6,
+    };
+    for (const zone of ZONES) expect(zone.bendMul).toBe(expected[zone.id]);
   });
 });

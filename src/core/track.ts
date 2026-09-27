@@ -3,7 +3,7 @@ import type {
   Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
-import { zoneAt } from './zones';
+import { zoneAt, zoneIndex, ZONES } from './zones';
 
 export const SEGMENT_LENGTH = 200;
 export const TRACK_WIDTH = DEFAULT_PHYSICS.trackWidth;
@@ -102,6 +102,18 @@ export const TRACK_GEN = {
    * side), a pyramid per side with pyramidChance probability. Space has no decor at all. */
   duneCountMin: 2, duneCountRange: 2, duneXMin: 50, duneXRange: 90, duneScaleMin: 10, duneScaleRange: 20,
   pyramidChance: 0.4, pyramidXMin: 60, pyramidXRange: 30, pyramidScaleMin: 20, pyramidScaleRange: 15,
+  /** Canyon jump (canyon design §2): a RouteSection (canyon: true) with a single full-width
+   * `pillars` lane and no pillars, spanning a gap [canyonGapMin, canyonGapMin+canyonGapRange)
+   * metres long. Appears from canyonMinZ on, in a segment with no route/slider yet, at
+   * canyonChance. A RAMP_BIG entry ramp (canyonRampWidth wide, x=0) ends 1 m before the gap; an
+   * arc of coins (canyonCoinSpacing apart, peaking at canyonCoinLift) spans the whole gap. */
+  canyonMinZ: 1000, canyonChance: 0.25, canyonGapMin: 22, canyonGapRange: 8,
+  canyonRampWidth: 10, canyonCoinSpacing: 3, canyonCoinLift: 5,
+  /** Consecutive jump ramps ("stairs", canyon design §3): stairsCount RAMP_SMALL ramps,
+   * stairsSpacing metres apart, stairsRampWidth wide, x=0, in a segment with no route (which
+   * covers canyon too) and no slider. Reduces the free-ramp loop's own target count by
+   * stairsCount so a stairs segment doesn't also get 1-2 extra free ramps piled on top. */
+  stairsMinZ: 400, stairsChance: 0.2, stairsCount: 3, stairsSpacing: 28, stairsRampWidth: 8,
 } as const;
 
 const SLOPE_START = 0.12;
@@ -114,7 +126,7 @@ export const CORRIDOR_HALF = 2.5;
 /** Curved-track world bend (design doc §1): the centerline drifts left/right as two summed sine
  * waves, faded in from z=0 over `fadeIn` metres so the launch pad stays straight. Named constants
  * are also embedded (as GLSL literals) in render/bend.ts's vertex-shader bend, which must match. */
-export const TRACK_BEND = { amp1: 10, wave1: 260, amp2: 4, wave2: 95, fadeIn: 150 } as const;
+export const TRACK_BEND = { amp1: 10, wave1: 260, amp2: 4, wave2: 95, fadeIn: 150, zoneBlend: 100 } as const;
 /** Half-step (m) for centerSlopeAt's central numeric difference. */
 const CENTER_SLOPE_STEP = 0.5;
 const OBSTACLE_MARGIN_X = 1;
@@ -160,14 +172,28 @@ export function bendPhases(seed: number): [number, number] {
   return [rng() * 2 * Math.PI, rng() * 2 * Math.PI];
 }
 
+/** Per-zone bend-strength multiplier (canyon design §1): each zone's `bendMul` is blended in from
+ * the previous zone's over TRACK_BEND.zoneBlend metres past the zone's own z0 (smoothstep), so
+ * the curve amplitude eases into a new zone's character instead of snapping. The first zone (no
+ * previous zone) keeps its own multiplier throughout. Must match the GLSL bendMulAt in
+ * render/bend.ts exactly (embedded there as a literal table generated from ZONES). */
+export function bendMulAt(z: number): number {
+  const zone = zoneAt(z);
+  const idx = zoneIndex(zone.id);
+  if (idx <= 0) return zone.bendMul;
+  const prev = ZONES[idx - 1];
+  const t = (z - zone.z0) / TRACK_BEND.zoneBlend;
+  return prev.bendMul + (zone.bendMul - prev.bendMul) * smoothstep(t);
+}
+
 /** Lateral centerline offset at `z` (design doc §1): a fade-in (smoothstep over
- * TRACK_BEND.fadeIn) times the sum of two sine waves at their own wavelength/phase. 0 before the
- * launch pad (z < 0). */
+ * TRACK_BEND.fadeIn) times the sum of two sine waves at their own wavelength/phase, scaled by the
+ * current zone's bend multiplier (canyon design §1). 0 before the launch pad (z < 0). */
 function centerAtPhases(z: number, phases: readonly [number, number]): number {
   if (z <= 0) return 0;
   const fade = smoothstep(z / TRACK_BEND.fadeIn);
   const [p1, p2] = phases;
-  return fade * (
+  return bendMulAt(z) * fade * (
     TRACK_BEND.amp1 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave1 + p1)
     + TRACK_BEND.amp2 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave2 + p2)
   );
@@ -397,6 +423,30 @@ function generateSegment(seed: number, index: number): Segment {
       }
     }
   }
+
+  // Canyon jump (canyon design §2): only when no multi-lane route landed above, own salted rng
+  // stream so it never perturbs any other draw. Reuses RouteSection (canyon: true) so every
+  // later feature (drops, free ramps, pipes, pads, obstacles, coin lines) avoids it via the same
+  // inRouteSpan/inRouteApproach rules defined just below, automatically.
+  const canyonRng = mulberry32(hashSeed(seed, index) ^ 0x3c9e0d41);
+  if (route === null && z0 >= TRACK_GEN.canyonMinZ && canyonRng() < TRACK_GEN.canyonChance) {
+    const gap = TRACK_GEN.canyonGapMin + canyonRng() * TRACK_GEN.canyonGapRange;
+    const lo = z0 + 40;
+    const hi = z1 - 40 - gap;
+    if (hi > lo) {
+      const cz0 = lo + canyonRng() * (hi - lo);
+      const cz1 = cz0 + gap;
+      const w = widthAt(cz0);
+      const lane: Lane = { xMin: -w / 2, xMax: w / 2, yOffset: -TRACK_GEN.hazardDepth, kind: 'pillars' };
+      route = { z0: cz0, z1: cz1, lanes: [lane], pillars: [], hazard: zone.id === 'volcano' ? 'lava' : 'chasm', canyon: true };
+      // No normal route entry ramp (-re): a big ramp instead, ending 1 m before the gap's edge.
+      routeRamps.push({
+        id: `${index}-cr`, z: cz0 - RAMP_BIG.length - 1, length: RAMP_BIG.length, height: RAMP_BIG.height,
+        x: 0, width: TRACK_GEN.canyonRampWidth,
+      });
+    }
+  }
+
   const inRouteSpan = (z: number): boolean => route !== null
     && z >= route.z0 - TRACK_GEN.routeEntryRampLead - TRACK_GEN.rampExclusionBefore
     && z <= route.z1 + TRACK_GEN.rampExclusionAfter;
@@ -473,7 +523,39 @@ function generateSegment(seed: number, index: number): Segment {
       x: 0, width: TRACK_GEN.rampBigWidth,
     });
   }
-  const rampCount = TRACK_GEN.rampMin + Math.floor(rng() * TRACK_GEN.rampRange);
+
+  // Consecutive jump ramps ("stairs", canyon design §3). Own salted rng stream; only when this
+  // segment has no route (which covers canyon too, since canyon sets `route`) and no slider.
+  // Checked against the drop decided just above (same span-overlap style as the free-ramp loop
+  // below); a half-pipe decided later avoids every existing ramp via its own overlap check, so
+  // mutual exclusion with a pipe holds from that side. Pushed straight into `ramps` so the
+  // existing arch-coin/guide-coin generation and obstacle avoidance (both keyed off `ramps`)
+  // already cover it, same as any other ramp.
+  const stairsRng = mulberry32(hashSeed(seed, index) ^ 0x6a09e667);
+  let stairsPlaced = 0;
+  if (route === null && slider === null && z0 >= TRACK_GEN.stairsMinZ && stairsRng() < TRACK_GEN.stairsChance) {
+    const span = 2 * TRACK_GEN.stairsSpacing + RAMP_SMALL.length;
+    const lo = z0 + 30;
+    const hi = z1 - 30 - span;
+    if (hi > lo) {
+      const firstZ = lo + stairsRng() * (hi - lo);
+      const overlapsDrop = drops.some(
+        (d) => firstZ < d.z + d.length + TRACK_GEN.rampExclusionAfter
+          && firstZ + span > d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore,
+      );
+      if (!overlapsDrop) {
+        for (let k = 0; k < TRACK_GEN.stairsCount; k++) {
+          ramps.push({
+            id: `${index}-rs${k}`, z: firstZ + k * TRACK_GEN.stairsSpacing, length: RAMP_SMALL.length, height: RAMP_SMALL.height,
+            x: 0, width: TRACK_GEN.stairsRampWidth,
+          });
+        }
+        stairsPlaced = TRACK_GEN.stairsCount;
+      }
+    }
+  }
+
+  const rampCount = Math.max(0, TRACK_GEN.rampMin + Math.floor(rng() * TRACK_GEN.rampRange) - stairsPlaced);
   const rampSpanLo = z0 + TRACK_GEN.rampStartMargin;
   const rampSpanHi = z1 - TRACK_GEN.rampEndMargin;
   const routeRampCount = routeRamps.length;
@@ -732,6 +814,16 @@ function generateSegment(seed: number, index: number): Segment {
         coins.push({ id: `${index}-pc${pi}-${k}`, x: p.x, z: p.z - (k - 1) * TRACK_GEN.pillarCoinSpacing - TRACK_GEN.pillarRadius / 2, lift: 0 });
       }
     });
+    // Canyon coins (canyon design §2): an arc across the whole gap, x=0, canyonCoinSpacing apart,
+    // lift following a sine arc peaking at canyonCoinLift at the midpoint. No ridge/pillar coins
+    // apply here (route.canyon has no ridge lane and no pillars, so the blocks above are no-ops).
+    if (route.canyon) {
+      let k = 0;
+      for (let cz = route.z0; cz <= route.z1; cz += TRACK_GEN.canyonCoinSpacing) {
+        const t = (cz - route.z0) / (route.z1 - route.z0);
+        coins.push({ id: `${index}-cc${k++}`, x: 0, z: cz, lift: TRACK_GEN.canyonCoinLift * Math.sin(Math.PI * t) });
+      }
+    }
   }
 
   // Slider rewards (art §2): a centre coin line every sliderCoinSpacing between the blends, and
