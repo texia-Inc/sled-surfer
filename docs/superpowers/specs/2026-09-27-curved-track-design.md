@@ -44,3 +44,13 @@
 
 - `npx tsc --noEmit -p .`、`npx vitest run --pool=forks`。
 - ヘッドレス Chrome で z ≈ 300、1000、スライダー区間、宇宙の管の場面を撮り、道が左右にうねっていること、レール・管・岩壁・地面がずれずに一体で曲がっていること、カメラが道を追っていること、スピードラインが画面に固定されたままであることを見る。
+
+## 改訂（2026-09-27 夜）: 常時のうねりを廃止、スライダー区間だけ曲げる
+
+ユーザー判断: 「ぐにゃぐにゃしすぎ。基本まっすぐで、分岐ならいい」。
+
+- 常時の 2 波の揺れ（TRACK_BEND、bendPhases、ZoneDef.bendMul、bendMulAt、zoneBlend）は削除する。
+- 曲がるのはスライダー区間の中だけ。`SLIDER_BEND = { amp: 8, blend: 20 }`。スライダー `{z0, z1}` に対し `t = (z − z0) / (z1 − z0)`、`shape(z) = amp × sin(2π t) × w(z)`、`w(z) = smoothstep((z − z0)/blend) × smoothstep((z1 − z)/blend)`（両端で値も傾きも 0 なので継ぎ目に折れが出ない）。
+- `centerAt(z)`: z を含む区間のスライダーがあればその shape、なければ 0。`centerSlopeAt` は数値微分のまま。`Track.bendPhases` は削除。
+- GLSL: 位相ユニフォームの代わりに `uniform vec4 uSliders[4]`（x: z0, y: z1, z: 有効なら 1）。`worldBendX(gameZ)` は 4 本を合算（無効は 0）。JS 側 `updateBendSliders(track, z)` を毎フレーム呼び、`segmentIndexAt(z) − 1 .. + 3` の区間のスライダーを詰める（スライダーは区間をまたがないので、可視範囲を全て含む）。
+- テスト: スライダーのない z で `centerAt === 0`、スライダー中央付近で |centerAt| > 0、両端で 0、1 m 刻みで滑らか。bendMul のテストは削除。
