@@ -6,7 +6,7 @@ import type { Gate, Phase } from './core/types';
 import type { CameraMode } from './core/cameraPose';
 import { InputController } from './input';
 import { createScene } from './render/scene';
-import { installWorldBend, setBendPhases } from './render/bend';
+import { installWorldBend, updateBendSliders } from './render/bend';
 import { snapCamera, updateCamera } from './render/camera';
 import { TerrainManager } from './render/terrain';
 import { PropManager } from './render/props';
@@ -119,7 +119,6 @@ function boot(): void {
   // THREE.Material.prototype.onBeforeCompile so every material bends with the track by default
   // (curved-track world bend, design doc §2).
   installWorldBend();
-  setBendPhases(...game.track.bendPhases);
   const fogTmp = new THREE.Color();
   const sky = new SkyDome(scene);
   const terrain = new TerrainManager(scene, game.track);
@@ -143,7 +142,6 @@ function boot(): void {
     onRetry: () => {
       results.hide();
       game.restart();
-      setBendPhases(...game.track.bendPhases);
       terrain.setTrack(game.track);
       props.setTrack(game.track);
       props.setGoal(game.profile.goalDistance);
@@ -302,6 +300,7 @@ function boot(): void {
     });
     sky.update(z, camera.position, now / 1000);
     hud.update(run, game.profile, game.phase);
+    updateBendSliders(game.track, z);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

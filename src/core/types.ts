@@ -107,16 +107,14 @@ export interface Track extends TrackQuery {
   onPillar(z: number, x: number): boolean;
   /** The slider section containing `z`, or null when `z` isn't inside one (art §2). */
   sliderAt(z: number): Slider | null;
-  /** Lateral centerline offset (m) at game z (curved-track world bend design, §1): 0 for z < 0,
-   * fading in over TRACK_BEND.fadeIn. Render applies this per-vertex (render/bend.ts); the
-   * camera applies it in JS (render/camera.ts). */
+  /** Lateral centerline offset (m) at game z (curved-track world bend design, revised
+   * 2026-09-27 night): 0 outside a slider section, that slider's shape inside one. Render applies
+   * this per-vertex (render/bend.ts, via updateBendSliders); the camera applies it in JS
+   * (render/camera.ts). */
   centerAt(z: number): number;
   /** Numeric derivative of centerAt (dCenter/dz), used to yaw the player to face the curve's
    * tangent (render/player.ts). */
   centerSlopeAt(z: number): number;
-  /** The two deterministic phases (radians) centerAt/centerSlopeAt use, salted from the track's
-   * seed; passed to render/bend.ts's setBendPhases whenever the track (re)starts. */
-  bendPhases: [number, number];
 }
 
 export interface Input { steer: number; rocket: boolean; }

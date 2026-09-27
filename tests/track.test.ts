@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_SMALL, RAMP_BIG, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
-  TRACK_BEND, bendPhases, bendMulAt,
 } from '../src/core/track';
 import { zoneAt, ZONES } from '../src/core/zones';
 import type { Segment, Track } from '../src/core/types';
@@ -951,76 +950,46 @@ describe('slider sections', () => {
   });
 });
 
-describe('curved track world bend (centerAt/centerSlopeAt/bendPhases)', () => {
-  const MAX_AMP = TRACK_BEND.amp1 + TRACK_BEND.amp2;
+describe('curved track world bend (centerAt/centerSlopeAt, revision 2026-09-27 night: straight outside sliders)', () => {
+  function findSliderTrack(): { t: Track; slider: NonNullable<Segment['slider']> } {
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = createTrack(seed);
+      for (let i = 4; i < 60; i++) {
+        const seg = t.getSegment(i);
+        if (seg.slider) return { t, slider: seg.slider };
+      }
+    }
+    throw new Error('no slider section found');
+  }
 
-  it('is 0 at z=0 (and for every z < 0, the launch pad stays straight)', () => {
+  it('is 0 at any z with no slider covering it (including z < 0)', () => {
     const t = createTrack(5);
-    expect(t.centerAt(0)).toBe(0);
-    for (const z of [-1, -50, -500]) expect(t.centerAt(z)).toBe(0);
+    // sliderMinZ is 800, so no segment before it ever carries a slider, for any seed.
+    for (const z of [-500, -1, 0, 10, 300, 799]) expect(t.centerAt(z)).toBe(0);
   });
 
-  it('never exceeds the sum of the two amplitudes times the strongest zone\'s bendMul', () => {
-    // Per-zone bend strength (canyon design §1) can scale the raw sine sum up (space's bendMul
-    // 1.6) or down (city's 0.5), so the bound is the two amplitudes times the largest bendMul
-    // across every zone, not the raw amplitude sum on its own.
-    const t = createTrack(9);
-    const maxMul = Math.max(...ZONES.map((z) => z.bendMul));
-    for (let z = 0; z <= 6000; z += 17) {
-      expect(Math.abs(t.centerAt(z))).toBeLessThanOrEqual(MAX_AMP * maxMul + 1e-9);
-    }
+  it('is nonzero somewhere inside a slider span, and exactly 0 at both of its ends', () => {
+    const { t, slider } = findSliderTrack();
+    let maxAbs = 0;
+    for (let z = slider.z0; z <= slider.z1; z += 1) maxAbs = Math.max(maxAbs, Math.abs(t.centerAt(z)));
+    expect(maxAbs).toBeGreaterThan(1);
+    expect(t.centerAt(slider.z0)).toBeCloseTo(0, 9);
+    expect(t.centerAt(slider.z1)).toBeCloseTo(0, 9);
   });
 
-  it('is deterministic for the same seed and differs across seeds', () => {
-    const a = createTrack(11), b = createTrack(11), c = createTrack(12);
-    expect(a.bendPhases).toEqual(b.bendPhases);
-    expect(a.bendPhases).not.toEqual(c.bendPhases);
-    for (const z of [10, 300, 1500, 4000]) {
-      expect(a.centerAt(z)).toBe(b.centerAt(z));
-      expect(a.centerAt(z)).not.toBe(c.centerAt(z));
-    }
-  });
-
-  it('is smooth: a 1m step changes centerAt by less than 1m', () => {
-    const t = createTrack(3);
-    for (let z = 0; z < 3000; z += 5) {
+  it('is smooth across and around a slider span: a 1m step changes centerAt by less than 1m', () => {
+    const { t, slider } = findSliderTrack();
+    for (let z = slider.z0 - 30; z < slider.z1 + 30; z += 1) {
       expect(Math.abs(t.centerAt(z + 1) - t.centerAt(z))).toBeLessThan(1);
     }
   });
 
-  it('fully fades in by z = fadeIn, so z=1000 matches the un-faded sine sum', () => {
-    const t = createTrack(4);
-    const [p1, p2] = bendPhases(4);
-    const z = 1000;
-    const raw = TRACK_BEND.amp1 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave1 + p1)
-      + TRACK_BEND.amp2 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave2 + p2);
-    expect(t.centerAt(z)).toBeCloseTo(raw, 6);
-  });
-
   it('centerSlopeAt matches the numeric derivative of centerAt', () => {
-    const t = createTrack(6);
-    for (const z of [10, 200, 1500, 3500]) {
+    const { t, slider } = findSliderTrack();
+    const mid = (slider.z0 + slider.z1) / 2;
+    for (const z of [10, 200, slider.z0 + 5, mid, slider.z1 - 5]) {
       const num = (t.centerAt(z + 0.05) - t.centerAt(z - 0.05)) / 0.1;
       expect(Math.abs(num - t.centerSlopeAt(z))).toBeLessThan(1e-2);
-    }
-  });
-});
-
-describe('bendMulAt (canyon design §1)', () => {
-  it('returns the desert zone\'s own bendMul well past the zone-blend distance', () => {
-    expect(bendMulAt(4500)).toBe(1.4);
-  });
-
-  it('returns the first zone\'s (snowfield) own bendMul, unblended', () => {
-    expect(bendMulAt(50)).toBe(0.6);
-  });
-
-  it('is continuous across every zone boundary (1m-step difference stays small)', () => {
-    for (const zone of ZONES) {
-      if (zone.z0 === 0) continue;
-      for (let z = zone.z0 - 5; z < zone.z0 + 150; z += 1) {
-        expect(Math.abs(bendMulAt(z + 1) - bendMulAt(z))).toBeLessThan(0.05);
-      }
     }
   });
 });

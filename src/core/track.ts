@@ -3,7 +3,7 @@ import type {
   Track,
 } from './types';
 import { DEFAULT_PHYSICS } from './params';
-import { zoneAt, zoneIndex, ZONES } from './zones';
+import { zoneAt } from './zones';
 
 export const SEGMENT_LENGTH = 200;
 export const TRACK_WIDTH = DEFAULT_PHYSICS.trackWidth;
@@ -123,10 +123,6 @@ export const SLOPE_STEP = 0.1;
 export const MAX_SLOPE = 1.5;
 export const CORRIDOR_HALF = 2.5;
 
-/** Curved-track world bend (design doc §1): the centerline drifts left/right as two summed sine
- * waves, faded in from z=0 over `fadeIn` metres so the launch pad stays straight. Named constants
- * are also embedded (as GLSL literals) in render/bend.ts's vertex-shader bend, which must match. */
-export const TRACK_BEND = { amp1: 10, wave1: 260, amp2: 4, wave2: 95, fadeIn: 150, zoneBlend: 100 } as const;
 /** Half-step (m) for centerSlopeAt's central numeric difference. */
 const CENTER_SLOPE_STEP = 0.5;
 const OBSTACLE_MARGIN_X = 1;
@@ -165,38 +161,19 @@ function smoothstep(t: number): number {
   return c * c * (3 - 2 * c);
 }
 
-/** The two deterministic phases (radians, 0..2pi) `centerAt`/`centerSlopeAt` use, salted from the
- * track's seed with index -1 (distinct from every segment index, which is always >= 0). */
-export function bendPhases(seed: number): [number, number] {
-  const rng = mulberry32(hashSeed(seed, -1));
-  return [rng() * 2 * Math.PI, rng() * 2 * Math.PI];
-}
+/** World bend inside a slider section (design revision 2026-09-27 night): the track is straight
+ * everywhere except inside a slider's span, where the centerline traces one full sine period
+ * across it, faded in/out over `blend` metres at each end (smoothstep) so both the value and the
+ * slope are 0 at z0/z1 - no kink where it joins the straight track outside. Named constants are
+ * also embedded (as GLSL literals) in render/bend.ts's vertex-shader bend, which must match. */
+export const SLIDER_BEND = { amp: 8, blend: 20 } as const;
 
-/** Per-zone bend-strength multiplier (canyon design §1): each zone's `bendMul` is blended in from
- * the previous zone's over TRACK_BEND.zoneBlend metres past the zone's own z0 (smoothstep), so
- * the curve amplitude eases into a new zone's character instead of snapping. The first zone (no
- * previous zone) keeps its own multiplier throughout. Must match the GLSL bendMulAt in
- * render/bend.ts exactly (embedded there as a literal table generated from ZONES). */
-export function bendMulAt(z: number): number {
-  const zone = zoneAt(z);
-  const idx = zoneIndex(zone.id);
-  if (idx <= 0) return zone.bendMul;
-  const prev = ZONES[idx - 1];
-  const t = (z - zone.z0) / TRACK_BEND.zoneBlend;
-  return prev.bendMul + (zone.bendMul - prev.bendMul) * smoothstep(t);
-}
-
-/** Lateral centerline offset at `z` (design doc §1): a fade-in (smoothstep over
- * TRACK_BEND.fadeIn) times the sum of two sine waves at their own wavelength/phase, scaled by the
- * current zone's bend multiplier (canyon design §1). 0 before the launch pad (z < 0). */
-function centerAtPhases(z: number, phases: readonly [number, number]): number {
-  if (z <= 0) return 0;
-  const fade = smoothstep(z / TRACK_BEND.fadeIn);
-  const [p1, p2] = phases;
-  return bendMulAt(z) * fade * (
-    TRACK_BEND.amp1 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave1 + p1)
-    + TRACK_BEND.amp2 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave2 + p2)
-  );
+/** Lateral offset (m) contributed by a single slider span [z0, z1) at `z` (see SLIDER_BEND). Must
+ * match the GLSL shape in render/bend.ts's worldBendX exactly. */
+function sliderShape(z0: number, z1: number, z: number): number {
+  const t = (z - z0) / (z1 - z0);
+  const w = smoothstep((z - z0) / SLIDER_BEND.blend) * smoothstep((z1 - z) / SLIDER_BEND.blend);
+  return SLIDER_BEND.amp * Math.sin(2 * Math.PI * t) * w;
 }
 
 /** Track width at `z`, smoothstep-interpolated between a segment's widthStart/widthEnd. Shared
@@ -952,12 +929,6 @@ function dropOffsetAt(d: Drop, z: number): number {
 }
 
 export function createTrack(seed: number): Track {
-  const phases = bendPhases(seed);
-  const centerAt = (z: number): number => centerAtPhases(z, phases);
-  const centerSlopeAt = (z: number): number => (
-    (centerAt(z + CENTER_SLOPE_STEP) - centerAt(z - CENTER_SLOPE_STEP)) / (2 * CENTER_SLOPE_STEP)
-  );
-
   const cache = new Map<number, Segment>();
   // Cumulative drop depth at each segment's z0, i.e. the sum of every earlier segment's drop
   // depths (all already fully descended by the time a later segment starts - see dropOffset
@@ -1079,8 +1050,22 @@ export function createTrack(seed: number): Track {
     return slider && z >= slider.z0 && z <= slider.z1 ? slider : null;
   };
 
+  /** Lateral centerline offset at `z` (design revision 2026-09-27 night): the slider spanning `z`
+   * (if any)'s shape, else 0 - straight everywhere outside a slider. Works for any z >= 0 (0 for
+   * z < 0) since sliderAt already returns null there; used by the camera (render/camera.ts) for z
+   * values behind/ahead of the sled, not just its own. */
+  const centerAt = (z: number): number => {
+    const slider = sliderAt(z);
+    return slider ? sliderShape(slider.z0, slider.z1, z) : 0;
+  };
+  /** Numeric derivative of centerAt (dCenter/dz), used to yaw the player to face the curve's
+   * tangent (render/player.ts). */
+  const centerSlopeAt = (z: number): number => (
+    (centerAt(z + CENTER_SLOPE_STEP) - centerAt(z - CENTER_SLOPE_STEP)) / (2 * CENTER_SLOPE_STEP)
+  );
+
   return {
     seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt,
-    routeAt, laneAt, onPillar, sliderAt, centerAt, centerSlopeAt, bendPhases: phases,
+    routeAt, laneAt, onPillar, sliderAt, centerAt, centerSlopeAt,
   };
 }
