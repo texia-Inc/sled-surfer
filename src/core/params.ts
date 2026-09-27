@@ -76,6 +76,10 @@ export interface PhysicsParams {
   /** A portal counts as crossed only within this many metres past its z (so a run that starts
    * or is placed beyond an old portal never retro-triggers it). */
   warpWindow: number;
+  /** Metres the sled is teleported forward the instant it crosses a gate (real-portal design §3):
+   * on top of the existing boost, this is the "hop" that sells the warp as an instant jump into
+   * the next zone rather than just a speed kick. */
+  warpHop: number;
 }
 
 export const DEFAULT_PHYSICS: PhysicsParams = {
@@ -138,6 +142,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   wipeoutStun: 1.0,
   wipeoutSpeed: 10,
   warpWindow: 20,
+  warpHop: 24,
 };
 
 export const LAUNCH = {

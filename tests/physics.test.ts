@@ -694,8 +694,10 @@ describe('zone portals', () => {
       if (warpedAt < 0 && s.warpCount === 1) warpedAt = s.z;
     }
     expect(s.warpCount).toBe(1);
-    expect(warpedAt).toBeGreaterThanOrEqual(600);
-    expect(warpedAt).toBeLessThan(600 + DEFAULT_PHYSICS.warpWindow);
+    // The warp hop (real-portal design §3) teleports the sled warpHop metres forward the instant
+    // it crosses, on top of the boost, so the post-crossing z sits past 600 + warpHop.
+    expect(warpedAt).toBeGreaterThanOrEqual(600 + DEFAULT_PHYSICS.warpHop - 1);
+    expect(warpedAt).toBeLessThan(600 + DEFAULT_PHYSICS.warpWindow + DEFAULT_PHYSICS.warpHop);
     expect(s.boostCount).toBe(1);
   });
 

@@ -181,7 +181,6 @@ const GATE_RING_COLOR = 0xbfe6ff;
 const GATE_RING_CENTER_Y = 6;
 const GATE_DISC_RADIUS = 6.2;
 const GATE_DISC_SEGMENTS = 32;
-const GATE_DISC_OPACITY = 0.35;
 /** Clearance between the ring's top and the zone-name label above it. */
 const GATE_NAME_CLEARANCE = 2;
 
@@ -465,14 +464,9 @@ export class PropManager {
   private readonly matDune = new THREE.MeshLambertMaterial({ color: DUNE_COLOR, flatShading: true });
   private readonly matPyramid = new THREE.MeshLambertMaterial({ color: PYRAMID_COLOR, flatShading: true });
 
-  // --- Gate materials (ring is one shared colour; the inside disc is per-zone, art §5) ---
+  // --- Gate materials (ring is one shared colour; the inside disc shows the destination through
+  // the portal render target, real-portal design §2 - shared across every gate, passed in) ---
   private readonly matGateRing = new THREE.MeshLambertMaterial({ color: GATE_RING_COLOR, flatShading: true });
-  private readonly matGateDisc = new Map<ZoneId, THREE.MeshBasicMaterial>(
-    ZONES.map((z) => [z.id, new THREE.MeshBasicMaterial({
-      color: ZONE_THEMES[z.id].gate, transparent: true, opacity: GATE_DISC_OPACITY,
-      depthWrite: false, side: THREE.DoubleSide,
-    })]),
-  );
   private readonly gateNameMaterials = new Map<ZoneId, THREE.MeshBasicMaterial>();
 
   // --- Slider rail / space pipe materials (art §5) ---
@@ -488,7 +482,14 @@ export class PropManager {
   });
   private readonly matGoalRope = new THREE.MeshLambertMaterial({ color: GOAL_ROPE_COLOR, flatShading: true });
 
-  constructor(private readonly scene: THREE.Scene, track: Track, private readonly params: PhysicsParams) {
+  constructor(
+    private readonly scene: THREE.Scene,
+    track: Track,
+    private readonly params: PhysicsParams,
+    /** Shared portal-view material (render/portal.ts's PortalView.material) used by every gate's
+     * disc, so the ring shows the destination through its render target (real-portal design §2). */
+    private readonly portalMaterial: THREE.Material,
+  ) {
     this.track = track;
     this.coin.rotateX(Math.PI / 2);
     this.padGeo.rotateX(-Math.PI / 2);
@@ -562,6 +563,18 @@ export class PropManager {
       this.scene.add(this.goalGroup);
     }
     this.goalGroup.position.set(0, this.track.heightAt(goalDistance), -goalDistance);
+  }
+
+  /** Finds the loaded gate disc mesh for the gate at `z` (real-portal design §2), or null if its
+   * segment isn't currently loaded (outside the BEHIND/AHEAD window). Used by main.ts to hand
+   * PortalView.render the exact mesh to show/hide for the upcoming gate. */
+  getGateDisc(z: number): THREE.Mesh | null {
+    for (const b of this.bundles.values()) {
+      for (const child of b.group.children) {
+        if (child.name === 'portal-disc' && child.userData.gateZ === z) return child as THREE.Mesh;
+      }
+    }
+    return null;
   }
 
   update(z: number, collected: ReadonlySet<string>, dt: number, brokenIds: ReadonlySet<string>): void {
@@ -1070,7 +1083,12 @@ export class PropManager {
       group.add(box);
     }
 
-    const disc = new THREE.Mesh(this.gateDiscGeo, this.matGateDisc.get(gate.zone)!);
+    // Real portal (design §2): the disc shows the destination through PortalView's render
+    // target instead of a translucent zone-coloured plane. Named/tagged so main.ts's
+    // PortalView.render can find and hide the right disc for the upcoming gate.
+    const disc = new THREE.Mesh(this.gateDiscGeo, this.portalMaterial);
+    disc.name = 'portal-disc';
+    disc.userData.gateZ = gate.z;
     disc.position.set(0, centerY, -gate.z);
     group.add(disc);
 

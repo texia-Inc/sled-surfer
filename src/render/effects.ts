@@ -180,6 +180,12 @@ export class Effects {
     this.lines = new SpeedLines(camera);
   }
 
+  /** The speed-lines group (parented to the camera), so main.ts can hide it during a
+   * PortalView render pass (real-portal design §2) without exposing the SpeedLines class. */
+  get speedLinesGroup(): THREE.Group {
+    return this.lines.group;
+  }
+
   update(i: EffectsInput): void {
     // i.hitCount is reserved for a future collision puff; not wired yet.
 

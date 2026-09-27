@@ -259,6 +259,10 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
     if (s.z >= gate.z && s.z < gate.z + p.warpWindow && !s.triggeredPadIds.has(id)) {
       applyBoost(s, p, id);
       s.warpCount += 1;
+      // Real-portal warp hop (design §3): an instant jump forward through the ring, on top of
+      // the boost, so crossing reads as a teleport rather than just a speed kick.
+      s.z += p.warpHop;
+      s.y = Math.max(s.y, track.heightAt(s.z, s.x));
     }
   }
 

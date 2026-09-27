@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { Game } from './core/game';
 import { loadProfile, saveProfile, type StorageLike } from './core/save';
-import type { Phase } from './core/types';
+import type { Gate, Phase } from './core/types';
 import type { CameraMode } from './core/cameraPose';
 import { InputController } from './input';
 import { createScene } from './render/scene';
@@ -13,6 +13,7 @@ import { PropManager } from './render/props';
 import { PlayerView } from './render/player';
 import { Effects } from './render/effects';
 import { SkyDome } from './render/sky';
+import { PortalView } from './render/portal';
 import { blendedThemeColor, themeAt } from './render/zoneTheme';
 import { Hud } from './ui/hud';
 import { AimGauge } from './ui/aim';
@@ -32,6 +33,16 @@ const EMPTY_COINS: ReadonlySet<string> = new Set<string>();
 const CAMERA_MODE_KEY = 'sled-surfer:camera:v1';
 const DEFAULT_CAMERA_MODE: CameraMode = 'full';
 const FOG_LERP_RATE = 2;
+/** Fog wall (real-portal design §1): while the next gate is within this many metres ahead, the
+ * fog target is pulled in to just past the gate instead of the zone's normal near/far, so the
+ * destination beyond the ring is hidden in the current zone's fog colour. */
+const PORTAL_FOG_RANGE = 120;
+/** Fog near target = distance to the gate + this pad (m), so the ring itself stays clear. */
+const PORTAL_FOG_NEAR_PAD = 2;
+/** Fog far target = distance to the gate + this (m): how deep the fog wall's falloff is. */
+const PORTAL_FOG_DEPTH = 14;
+/** Faster fog lerp while approaching a gate, so the wall keeps pace as the sled closes in. */
+const PORTAL_FOG_LERP_RATE = 6;
 /** How far ahead (m) the camera looks for slope, to tilt the look target before a descent. */
 const CAMERA_SLOPE_AHEAD_DIST = 8;
 /** How far before/after a Drop's span the camera treats the sled as "in the drop". */
@@ -112,7 +123,8 @@ function boot(): void {
   const fogTmp = new THREE.Color();
   const sky = new SkyDome(scene);
   const terrain = new TerrainManager(scene, game.track);
-  const props = new PropManager(scene, game.track, game.physicsParams());
+  const portal = new PortalView();
+  const props = new PropManager(scene, game.track, game.physicsParams(), portal.material);
   const player = new PlayerView(scene);
   const effects = new Effects(scene, camera);
   const input = new InputController(canvas);
@@ -215,11 +227,35 @@ function boot(): void {
       lastWipeoutCount = 0;
     }
 
+    // Next gate ahead (real-portal design §1/§2): nearest seg.gate with gate.z >= z. Not
+    // track.segmentsAround(z) - that only spans z +/- 10m (plenty for the physics gate-crossing
+    // check, which only cares once the sled is within warpWindow), far short of the 120-150m the
+    // fog wall/portal view need to look ahead. Segments are SEGMENT_LENGTH (200) m long, so
+    // scanning the current segment plus the next two comfortably covers a 150m lookahead from
+    // anywhere inside the current one.
+    let nextGate: Gate | null = null;
+    const gateScanStart = game.track.segmentIndexAt(z);
+    for (let i = gateScanStart; i <= gateScanStart + 2 && !nextGate; i++) {
+      const seg = game.track.getSegment(i);
+      if (seg.gate && seg.gate.z >= z) nextGate = seg.gate;
+    }
+
     fog.color.copy(blendedThemeColor(z, (t) => t.fog, fogTmp));
     const fogTarget = themeAt(z);
-    const fogK = Math.min(1, frameDt * FOG_LERP_RATE);
-    fog.near += (fogTarget.fogNear - fog.near) * fogK;
-    fog.far += (fogTarget.fogFar - fog.far) * fogK;
+    let fogTargetNear = fogTarget.fogNear;
+    let fogTargetFar = fogTarget.fogFar;
+    let fogRate = FOG_LERP_RATE;
+    const gateDist = nextGate ? nextGate.z - z : Infinity;
+    if (gateDist > 0 && gateDist <= PORTAL_FOG_RANGE) {
+      // Fog wall: clear up to just past the gate, fogged out beyond it, so the destination
+      // isn't visible through the ring from far away (condition 1 of the real-portal design).
+      fogTargetNear = gateDist + PORTAL_FOG_NEAR_PAD;
+      fogTargetFar = gateDist + PORTAL_FOG_DEPTH;
+      fogRate = PORTAL_FOG_LERP_RATE;
+    }
+    const fogK = Math.min(1, frameDt * fogRate);
+    fog.near += (fogTargetNear - fog.near) * fogK;
+    fog.far += (fogTargetFar - fog.far) * fogK;
 
     const slopeAhead = run
       ? Math.max(-1, Math.min(1, game.track.slopeAt(z + CAMERA_SLOPE_AHEAD_DIST)))
@@ -256,6 +292,14 @@ function boot(): void {
       x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt,
       centerAt: game.track.centerAt,
     }, frameDt);
+    // Real portal (design §2): render the destination zone into the ring's disc before the main
+    // pass, when the next gate is close enough for it to matter (early return otherwise).
+    portal.render({
+      renderer, scene, mainCamera: camera, gameZ: z, gate: nextGate,
+      disc: nextGate ? props.getGateDisc(nextGate.z) : null,
+      centerAt: game.track.centerAt, sky, fog, timeSec: now / 1000,
+      hideGroups: [player.group, effects.speedLinesGroup],
+    });
     sky.update(z, camera.position, now / 1000);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);
