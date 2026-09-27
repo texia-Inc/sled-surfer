@@ -128,6 +128,9 @@ class SpeedLines {
   constructor(camera: THREE.Camera) {
     for (let k = 0; k < LINE_COUNT; k++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+      // Parented to the camera and screen-fixed (radiating from centre); the world bend must not
+      // touch these (curved-track design doc §2).
+      mat.userData.noBend = true;
       const mesh = new THREE.Mesh(this.geo, mat);
       const angle = (k / LINE_COUNT) * Math.PI * 2;
       const radius = LINE_RADIUS_MIN + Math.random() * (LINE_RADIUS_MAX - LINE_RADIUS_MIN);

@@ -6,6 +6,7 @@ import type { Phase } from './core/types';
 import type { CameraMode } from './core/cameraPose';
 import { InputController } from './input';
 import { createScene } from './render/scene';
+import { installWorldBend, setBendPhases } from './render/bend';
 import { snapCamera, updateCamera } from './render/camera';
 import { TerrainManager } from './render/terrain';
 import { PropManager } from './render/props';
@@ -103,6 +104,11 @@ function boot(): void {
     return;
   }
   const { renderer, scene, camera, fog } = created;
+  // Must run before any material below gets compiled: it patches
+  // THREE.Material.prototype.onBeforeCompile so every material bends with the track by default
+  // (curved-track world bend, design doc §2).
+  installWorldBend();
+  setBendPhases(...game.track.bendPhases);
   const fogTmp = new THREE.Color();
   const sky = new SkyDome(scene);
   const terrain = new TerrainManager(scene, game.track);
@@ -125,12 +131,13 @@ function boot(): void {
     onRetry: () => {
       results.hide();
       game.restart();
+      setBendPhases(...game.track.bendPhases);
       terrain.setTrack(game.track);
       props.setTrack(game.track);
       props.setGoal(game.profile.goalDistance);
       snapCamera(camera, {
         x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-        speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt,
+        speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt, centerAt: game.track.centerAt,
       });
     },
   });
@@ -138,7 +145,7 @@ function boot(): void {
   props.setGoal(game.profile.goalDistance);
   snapCamera(camera, {
     x: 0, y: game.track.heightAt(0), z: 0, rocketing: false, boosting: false, shake: 0,
-    speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt,
+    speed: 0, slopeAhead: 0, inDrop: false, mode: cameraMode, groundAt, centerAt: game.track.centerAt,
   });
 
   let last = performance.now();
@@ -226,6 +233,7 @@ function boot(): void {
     player.update({
       x, y, z,
       pitchSlope: game.track.slopeAt(z),
+      centerSlope: game.track.centerSlopeAt(z),
       airTime: run ? run.airTime : 0,
       grounded: run ? run.grounded : true,
       steer: steerShown,
@@ -244,7 +252,10 @@ function boot(): void {
       wipeoutCount: run ? run.wipeoutCount : 0,
       dt: frameDt,
     });
-    updateCamera(camera, { x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt }, frameDt);
+    updateCamera(camera, {
+      x, y, z, rocketing, boosting, shake, speed, slopeAhead, inDrop, mode: cameraMode, groundAt,
+      centerAt: game.track.centerAt,
+    }, frameDt);
     sky.update(z, camera.position, now / 1000);
     hud.update(run, game.profile, game.phase);
     renderer.render(scene, camera);

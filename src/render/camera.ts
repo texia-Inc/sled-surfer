@@ -21,6 +21,10 @@ export interface CameraTarget {
   mode: CameraMode;
   /** Terrain height at a game (z, x); keeps the camera and look target above the ground. */
   groundAt: (z: number, x: number) => number;
+  /** Curved-track world bend (design doc §3): lateral centerline offset at a game z
+   * (track.centerAt). The camera isn't a mesh, so it applies this itself in JS instead of via the
+   * vertex-shader bend every other object gets. */
+  centerAt: (z: number) => number;
 }
 
 const SHAKE_DURATION = 0.18;
@@ -48,9 +52,14 @@ function toPoseInput(t: CameraTarget, aspect: number): PoseInput {
   };
 }
 
-function applyPose(camera: THREE.PerspectiveCamera, x: number, y: number, p: Pose): void {
-  camera.position.set(x, y, p.pz);
-  camera.lookAt(p.lx, p.ly, p.lz);
+/** Places the camera, offsetting both the eye and the look target's x by the curved-track world
+ * bend at their own (game) z (design doc §3): the camera isn't a mesh, so unlike every other
+ * object (bent per-vertex in the shader, render/bend.ts) it applies `centerAt` itself here. World
+ * z is the negated game z, so the lookups flip the sign, matching every other `centerAt(-worldZ)`
+ * call in this codebase (e.g. clampAboveGround's groundAt just above). */
+function applyPose(camera: THREE.PerspectiveCamera, x: number, y: number, p: Pose, centerAt: (z: number) => number): void {
+  camera.position.set(x + centerAt(-p.pz), y, p.pz);
+  camera.lookAt(p.lx + centerAt(-p.lz), p.ly, p.lz);
   camera.fov = p.fov;
   camera.updateProjectionMatrix();
 }
@@ -59,7 +68,7 @@ function applyPose(camera: THREE.PerspectiveCamera, x: number, y: number, p: Pos
 export function snapCamera(camera: THREE.PerspectiveCamera, t: CameraTarget): void {
   shakeEnergy = 0;
   pose = clampAboveGround(targetPose(toPoseInput(t, camera.aspect), t.mode), t.groundAt);
-  applyPose(camera, pose.px, pose.py, pose);
+  applyPose(camera, pose.px, pose.py, pose, t.centerAt);
 }
 
 export function updateCamera(camera: THREE.PerspectiveCamera, t: CameraTarget, dt: number): void {
@@ -74,5 +83,5 @@ export function updateCamera(camera: THREE.PerspectiveCamera, t: CameraTarget, d
     x += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
     y += (Math.random() - 0.5) * shakeEnergy * SHAKE_AMPLITUDE;
   }
-  applyPose(camera, x, y, pose);
+  applyPose(camera, x, y, pose, t.centerAt);
 }

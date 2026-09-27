@@ -4,6 +4,7 @@ import { SEGMENT_LENGTH, TRACK_WIDTH } from '../core/track';
 import { zoneAt } from '../core/zones';
 import { blendedThemeColor } from './zoneTheme';
 import { zoneDetailTexture } from './textures';
+import { applyWorldBend } from './bend';
 
 /** UV scale for the per-zone ground detail texture (art §4): world metres per texture repeat. */
 const DETAIL_UV_SCALE = 8;
@@ -48,9 +49,12 @@ const RIDGE_DARKEN = 0.9;
  * (see ZONE_THEMES.space.bank); every real surface colour is far brighter. */
 const VOID_THRESHOLD = 0.004;
 
-/** Injects a discard for void vertex colours into a vertex-coloured Lambert material. */
+/** Injects a discard for void vertex colours into a vertex-coloured Lambert material, and (since
+ * this instance-level onBeforeCompile shadows the THREE.Material.prototype patch installWorldBend
+ * installs) bends it too, so terrain curves along with everything else. */
 function withVoidDiscard(mat: THREE.MeshLambertMaterial): THREE.MeshLambertMaterial {
   mat.onBeforeCompile = (shader) => {
+    applyWorldBend(shader);
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createTrack, baseHeight, baseSlope, mulberry32, isOnPad,
   SEGMENT_LENGTH, TRACK_WIDTH, RAMP_SMALL, RAMP_BIG, TRACK_GEN, MAX_SLOPE, CORRIDOR_HALF,
+  TRACK_BEND, bendPhases,
 } from '../src/core/track';
 import { zoneAt, ZONES } from '../src/core/zones';
 import type { Segment, Track } from '../src/core/types';
@@ -931,6 +932,57 @@ describe('slider sections', () => {
     const a = createTrack(21), b = createTrack(21);
     for (let i = 0; i < 30; i++) {
       expect(JSON.stringify(a.getSegment(i))).toBe(JSON.stringify(b.getSegment(i)));
+    }
+  });
+});
+
+describe('curved track world bend (centerAt/centerSlopeAt/bendPhases)', () => {
+  const MAX_AMP = TRACK_BEND.amp1 + TRACK_BEND.amp2;
+
+  it('is 0 at z=0 (and for every z < 0, the launch pad stays straight)', () => {
+    const t = createTrack(5);
+    expect(t.centerAt(0)).toBe(0);
+    for (const z of [-1, -50, -500]) expect(t.centerAt(z)).toBe(0);
+  });
+
+  it('never exceeds the sum of the two amplitudes', () => {
+    const t = createTrack(9);
+    for (let z = 0; z <= 6000; z += 17) {
+      expect(Math.abs(t.centerAt(z))).toBeLessThanOrEqual(MAX_AMP + 1e-9);
+    }
+  });
+
+  it('is deterministic for the same seed and differs across seeds', () => {
+    const a = createTrack(11), b = createTrack(11), c = createTrack(12);
+    expect(a.bendPhases).toEqual(b.bendPhases);
+    expect(a.bendPhases).not.toEqual(c.bendPhases);
+    for (const z of [10, 300, 1500, 4000]) {
+      expect(a.centerAt(z)).toBe(b.centerAt(z));
+      expect(a.centerAt(z)).not.toBe(c.centerAt(z));
+    }
+  });
+
+  it('is smooth: a 1m step changes centerAt by less than 1m', () => {
+    const t = createTrack(3);
+    for (let z = 0; z < 3000; z += 5) {
+      expect(Math.abs(t.centerAt(z + 1) - t.centerAt(z))).toBeLessThan(1);
+    }
+  });
+
+  it('fully fades in by z = fadeIn, so z=1000 matches the un-faded sine sum', () => {
+    const t = createTrack(4);
+    const [p1, p2] = bendPhases(4);
+    const z = 1000;
+    const raw = TRACK_BEND.amp1 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave1 + p1)
+      + TRACK_BEND.amp2 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave2 + p2);
+    expect(t.centerAt(z)).toBeCloseTo(raw, 6);
+  });
+
+  it('centerSlopeAt matches the numeric derivative of centerAt', () => {
+    const t = createTrack(6);
+    for (const z of [10, 200, 1500, 3500]) {
+      const num = (t.centerAt(z + 0.05) - t.centerAt(z - 0.05)) / 0.1;
+      expect(Math.abs(num - t.centerSlopeAt(z))).toBeLessThan(1e-2);
     }
   });
 });

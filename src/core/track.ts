@@ -110,6 +110,13 @@ const SLOPE_FLATTEN_DIST = 3000;
 export const SLOPE_STEP = 0.1;
 export const MAX_SLOPE = 1.5;
 export const CORRIDOR_HALF = 2.5;
+
+/** Curved-track world bend (design doc §1): the centerline drifts left/right as two summed sine
+ * waves, faded in from z=0 over `fadeIn` metres so the launch pad stays straight. Named constants
+ * are also embedded (as GLSL literals) in render/bend.ts's vertex-shader bend, which must match. */
+export const TRACK_BEND = { amp1: 10, wave1: 260, amp2: 4, wave2: 95, fadeIn: 150 } as const;
+/** Half-step (m) for centerSlopeAt's central numeric difference. */
+const CENTER_SLOPE_STEP = 0.5;
 const OBSTACLE_MARGIN_X = 1;
 const FIRST_OBSTACLE_Z = 40;
 /** City buildings sit decorBankMin + this many metres from the centerline. */
@@ -144,6 +151,26 @@ function widthEndFor(seed: number, index: number): number {
 function smoothstep(t: number): number {
   const c = Math.max(0, Math.min(1, t));
   return c * c * (3 - 2 * c);
+}
+
+/** The two deterministic phases (radians, 0..2pi) `centerAt`/`centerSlopeAt` use, salted from the
+ * track's seed with index -1 (distinct from every segment index, which is always >= 0). */
+export function bendPhases(seed: number): [number, number] {
+  const rng = mulberry32(hashSeed(seed, -1));
+  return [rng() * 2 * Math.PI, rng() * 2 * Math.PI];
+}
+
+/** Lateral centerline offset at `z` (design doc §1): a fade-in (smoothstep over
+ * TRACK_BEND.fadeIn) times the sum of two sine waves at their own wavelength/phase. 0 before the
+ * launch pad (z < 0). */
+function centerAtPhases(z: number, phases: readonly [number, number]): number {
+  if (z <= 0) return 0;
+  const fade = smoothstep(z / TRACK_BEND.fadeIn);
+  const [p1, p2] = phases;
+  return fade * (
+    TRACK_BEND.amp1 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave1 + p1)
+    + TRACK_BEND.amp2 * Math.sin((2 * Math.PI * z) / TRACK_BEND.wave2 + p2)
+  );
 }
 
 /** Track width at `z`, smoothstep-interpolated between a segment's widthStart/widthEnd. Shared
@@ -833,6 +860,12 @@ function dropOffsetAt(d: Drop, z: number): number {
 }
 
 export function createTrack(seed: number): Track {
+  const phases = bendPhases(seed);
+  const centerAt = (z: number): number => centerAtPhases(z, phases);
+  const centerSlopeAt = (z: number): number => (
+    (centerAt(z + CENTER_SLOPE_STEP) - centerAt(z - CENTER_SLOPE_STEP)) / (2 * CENTER_SLOPE_STEP)
+  );
+
   const cache = new Map<number, Segment>();
   // Cumulative drop depth at each segment's z0, i.e. the sum of every earlier segment's drop
   // depths (all already fully descended by the time a later segment starts - see dropOffset
@@ -956,6 +989,6 @@ export function createTrack(seed: number): Track {
 
   return {
     seed, getSegment, segmentIndexAt, heightAt, slopeAt, surfaceAt, segmentsAround, widthAt, pipeAt,
-    routeAt, laneAt, onPillar, sliderAt,
+    routeAt, laneAt, onPillar, sliderAt, centerAt, centerSlopeAt, bendPhases: phases,
   };
 }

@@ -6,6 +6,9 @@ export interface PlayerPose {
   z: number;
   /** 接地中の地面の傾き (dh/dz) */
   pitchSlope: number;
+  /** Curved-track world bend's centerline slope (dCenter/dz) at the sled's z (design doc §4):
+   * yaws the sled to face the curve's tangent instead of always facing straight down +z. */
+  centerSlope: number;
   airTime: number;
   grounded: boolean;
   steer: number;
@@ -100,6 +103,7 @@ export class PlayerView {
       this.group.rotation.x = Math.max(0, p.airTime - FLIP_DELAY) * FLIP_RATE;
     }
     this.group.rotation.z = -p.steer * BANK;
+    this.group.rotation.y = -Math.atan(p.centerSlope);
     this.flame.visible = p.rocketing;
   }
 
