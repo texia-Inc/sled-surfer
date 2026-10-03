@@ -164,7 +164,12 @@ export function stepRun(s: RunState, input: Input, dt: number, track: TrackQuery
   } else {
     s.vy -= p.g * dt;
     s.vz += (drag + rocketA + boostA) * dt;
-    if (!wasStunned) s.vx += steer * p.airSteerAccel * dt;
+    // Air steering: approach the same lateral target as on the ground with a short time constant
+    // (the original lets you steer freely mid-jump), so landings can be aimed and gaps dodged.
+    if (!wasStunned) {
+      const target = (steer * p.maxLateral * Math.min(s.vz, p.lateralRefSpeed)) / p.lateralRefSpeed;
+      s.vx += (target - s.vx) * Math.min(1, dt / p.airSteerTau);
+    }
     if (s.vz < 0) s.vz = 0;
     s.z += s.vz * dt;
     s.y += s.vy * dt;

@@ -64,7 +64,9 @@ export interface PhysicsParams {
   /** Lateral probe distance (m) used to pick which way to slide off a front wall. */
   wallSlideProbe: number;
   /** Lateral acceleration (m/s²) from steering while airborne, so landings can be aimed. */
-  airSteerAccel: number;
+  /** Time constant (s) for airborne lateral speed to reach the same steer target as on the
+   * ground (the original allows near-full steering mid-jump); smaller = snappier. */
+  airSteerTau: number;
   /** vz multiplier applied when a forward step is blocked by a front wall. */
   frontWallSpeedMul: number;
   /** Stun duration (s) applied when a forward step is blocked by a front wall. */
@@ -136,7 +138,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   stepUpLimit: 1.2,
   wallLookahead: 1.0,
   wallSlideProbe: 3,
-  airSteerAccel: 8,
+  airSteerTau: 0.25,
   frontWallSpeedMul: 0.3,
   frontWallStun: 0.5,
   wipeoutStun: 1.0,

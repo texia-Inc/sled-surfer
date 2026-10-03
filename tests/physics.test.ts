@@ -676,8 +676,18 @@ describe('air steering', () => {
     s.grounded = false; s.y = 6; s.vy = 0;
     for (let i = 0; i < 60; i++) stepRun(s, { steer: 1, rocket: false }, DT, flat, DEFAULT_PHYSICS);
     expect(s.grounded).toBe(false);
-    expect(s.vx).toBeCloseTo(DEFAULT_PHYSICS.airSteerAccel * 0.5, 1);
-    expect(s.x).toBeGreaterThan(0.5);
+    const target = (DEFAULT_PHYSICS.maxLateral * Math.min(20, DEFAULT_PHYSICS.lateralRefSpeed)) / DEFAULT_PHYSICS.lateralRefSpeed;
+    expect(s.vx).toBeGreaterThan(target * 0.8);
+    expect(s.vx).toBeLessThanOrEqual(target + 1e-6);
+    expect(s.x).toBeGreaterThan(2);
+  });
+
+  it('releasing the stick in the air brings the drift back to zero', () => {
+    const s = grounded({ vz: 20 });
+    s.grounded = false; s.y = 8; s.vy = 0; s.vx = 6;
+    for (let i = 0; i < 60; i++) stepRun(s, { steer: 0, rocket: false }, DT, flat, DEFAULT_PHYSICS);
+    expect(s.grounded).toBe(false);
+    expect(Math.abs(s.vx)).toBeLessThan(1);
   });
 });
 
