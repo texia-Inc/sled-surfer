@@ -154,7 +154,8 @@ export const LAUNCH = {
   rocketsPerRun: 1,
 };
 
-export const GOAL = { initial: 600, stepAfter: 1000, roundTo: 50 };
+/** initial must equal ZONE_GOALS[0] (the first zone's goal line, GOAL_LEAD before its portal). */
+export const GOAL = { initial: 450, stepAfter: 1000, roundTo: 50 };
 
 export const ECONOMY = { distanceCoinDivisor: 10, goalBonusMul: 2 };
 

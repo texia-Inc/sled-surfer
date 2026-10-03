@@ -1,5 +1,6 @@
 import type { Profile } from './types';
 import { GOAL, UPGRADE } from './params';
+import { GOAL_LEAD, ZONES } from './zones';
 
 export const SAVE_KEY = 'sled-surfer:profile:v1';
 
@@ -26,6 +27,12 @@ function clampInt(v: unknown, fallback: number, lo: number, hi: number): number 
   return Math.max(lo, Math.min(hi, Math.round(n)));
 }
 
+/** Profiles saved before 2026-10-03 had goal lines ON the zone portals (600, 1200, ...); move
+ * such a goal GOAL_LEAD metres back so it sits at the finish banner instead. */
+function migrateGoal(goal: number): number {
+  return ZONES.some((z) => z.z0 > 0 && z.z0 === goal) ? goal - GOAL_LEAD : goal;
+}
+
 export function loadProfile(storage: StorageLike | null): Profile {
   const d = defaultProfile();
   if (!storage) return d;
@@ -48,7 +55,7 @@ export function loadProfile(storage: StorageLike | null): Profile {
   return {
     coins: clampInt(o.coins, d.coins, 0, Infinity),
     bestDistance: num(o.bestDistance, d.bestDistance),
-    goalDistance: Math.max(GOAL.roundTo, num(o.goalDistance, d.goalDistance)),
+    goalDistance: migrateGoal(Math.max(GOAL.roundTo, num(o.goalDistance, d.goalDistance))),
     upgrades: {
       slingshot: clampInt(up.slingshot, 0, 0, UPGRADE.maxLevel),
       sled: clampInt(up.sled, 0, 0, UPGRADE.maxLevel),

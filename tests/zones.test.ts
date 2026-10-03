@@ -38,21 +38,22 @@ describe('zoneIndex', () => {
 describe('nextGoal', () => {
   it('steps through zone milestones then by GOAL.stepAfter', () => {
     expect(nextGoal(0)).toBe(ZONE_GOALS[0]);
-    expect(nextGoal(600)).toBe(1200);
-    expect(nextGoal(1300)).toBe(2000);
-    expect(nextGoal(3500)).toBe(4000);
-    expect(nextGoal(3000)).toBe(4000);
+    expect(ZONE_GOALS[0]).toBe(450);
+    expect(nextGoal(600)).toBe(1050);
+    expect(nextGoal(1300)).toBe(1850);
+    expect(nextGoal(3500)).toBe(3850);
+    expect(nextGoal(3000)).toBe(3850);
   });
 
   it('stepAfter increments stay round', () => {
-    expect(nextGoal(4500)).toBe(5000);
+    expect(nextGoal(6000)).toBe(7000);
     expect(GOAL.stepAfter).toBe(1000);
   });
 });
 
 describe('art zones', () => {
   it('desert and space goals follow the volcano goal', () => {
-    expect(nextGoal(4500)).toBe(5000);
-    expect(nextGoal(5500)).toBe(6000);
+    expect(nextGoal(4500)).toBe(4850);
+    expect(nextGoal(5500)).toBe(5850);
   });
 });

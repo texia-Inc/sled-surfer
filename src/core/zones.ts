@@ -69,4 +69,7 @@ export function zoneIndex(id: ZoneId): number {
 }
 
 /** Distance milestones for goalDistance; after the last one, +GOAL.stepAfter each. */
-export const ZONE_GOALS = [600, 1200, 2000, 3000, 4000, 5000, 6000];
+/** Goal lines sit this many metres BEFORE each zone portal, so a run ends at the checkered
+ * finish banner and never on the ring itself (the portal is a pass-through, not a finish). */
+export const GOAL_LEAD = 150;
+export const ZONE_GOALS = [...ZONES.slice(1).map((z) => z.z0 - GOAL_LEAD), 6000 - GOAL_LEAD];

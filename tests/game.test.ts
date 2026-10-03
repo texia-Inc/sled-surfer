@@ -30,15 +30,15 @@ describe('computeResult', () => {
 
   describe('nextGoal', () => {
     it('moves from the initial goal to the next zone milestone', () => {
-      expect(nextGoal(600)).toBe(1200);
+      expect(nextGoal(600)).toBe(1050);
     });
 
     it('skips straight to the milestone past the finished distance', () => {
-      expect(nextGoal(1300)).toBe(2000);
+      expect(nextGoal(1300)).toBe(1850);
     });
 
     it('steps by GOAL.stepAfter once past the last milestone', () => {
-      expect(nextGoal(3500)).toBe(4000);
+      expect(nextGoal(3500)).toBe(3850);
     });
   });
 
@@ -50,7 +50,7 @@ describe('computeResult', () => {
     const after = applyResult(p, r);
     expect(after.coins).toBe(5 + r.earned);
     expect(after.bestDistance).toBe(1300);
-    expect(after.goalDistance).toBe(2000);
+    expect(after.goalDistance).toBe(1850);
     expect(p.goalDistance).toBe(600);
   });
 
@@ -96,7 +96,7 @@ describe('Game', () => {
     expect(game.lastResult!.finished).toBe(true);
     expect(game.lastResult!.goalReached).toBe(true);
     expect(game.profile.goalDistance).toBe(nextGoal(30));
-    expect(game.profile.goalDistance).toBe(600);
+    expect(game.profile.goalDistance).toBe(450);
   });
 
   it('ignores launch outside aim and update outside run', () => {
