@@ -107,8 +107,16 @@ export const TRACK_GEN = {
    * metres long. Appears from canyonMinZ on, in a segment with no route/slider yet, at
    * canyonChance. A RAMP_BIG entry ramp (canyonRampWidth wide, x=0) ends 1 m before the gap; an
    * arc of coins (canyonCoinSpacing apart, peaking at canyonCoinLift) spans the whole gap. */
-  canyonMinZ: 1000, canyonChance: 0.25, canyonGapMin: 22, canyonGapRange: 8,
-  canyonRampWidth: 10, canyonCoinSpacing: 3, canyonCoinLift: 5,
+  canyonMinZ: 1000, canyonChance: 0.25, canyonGapMin: 22, canyonGapRange: 6,
+  canyonRampWidth: 14, canyonCoinSpacing: 3, canyonCoinLift: 5,
+  /** Difficulty tuning (probe 2026-10-03: on the ramp the boost clears every gap regardless of
+   * approach speed; misses come from lateral aim and from landing on the exit slope). The last
+   * canyonExitSolid metres of a canyon (part of its exit slope) count as solid ground, so a short landing
+   * rides up out of the gap instead of wiping out. */
+  canyonExitSolid: 6,
+  /** No obstacles this many metres before a canyon's big ramp (probe 2026-10-03: an obstacle hit
+   * on the approach was the only cause of on-ramp failures). */
+  canyonApproachClear: 40,
   /** Consecutive jump ramps ("stairs", canyon design §3): stairsCount RAMP_SMALL ramps,
    * stairsSpacing metres apart, stairsRampWidth wide, x=0, in a segment with no route (which
    * covers canyon too) and no slider. Reduces the free-ramp loop's own target count by
@@ -424,8 +432,11 @@ function generateSegment(seed: number, index: number): Segment {
     }
   }
 
+  // A canyon's big ramp starts RAMP_BIG.length + 1 before the gap (further out than the normal
+  // entry ramp), so its exclusion window reaches back to cover that ramp too.
+  const routeLead = (): number => route !== null && route.canyon ? RAMP_BIG.length + 1 : TRACK_GEN.routeEntryRampLead;
   const inRouteSpan = (z: number): boolean => route !== null
-    && z >= route.z0 - TRACK_GEN.routeEntryRampLead - TRACK_GEN.rampExclusionBefore
+    && z >= route.z0 - routeLead() - TRACK_GEN.rampExclusionBefore
     && z <= route.z1 + TRACK_GEN.rampExclusionAfter;
   const inRouteApproach = (z: number): boolean => route !== null
     && z >= route.z0 - TRACK_GEN.routeApproachClear && z <= route.z1;
@@ -707,6 +718,9 @@ function generateSegment(seed: number, index: number): Segment {
     if (ramps.some((r) => z >= r.z - TRACK_GEN.rampExclusionBefore && z <= r.z + r.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (drops.some((d) => z >= d.z - RAMP_BIG.length - TRACK_GEN.rampExclusionBefore && z <= d.z + d.length + TRACK_GEN.rampExclusionAfter)) continue;
     if (inRouteSpan(z)) continue;
+    // Canyon approach: nothing to hit for canyonApproachClear metres before the big ramp, so a
+    // collision cannot knock the sled off the ramp line right before the gap (probe 2026-10-03).
+    if (route !== null && route.canyon && z >= route.z0 - routeLead() - TRACK_GEN.canyonApproachClear && z <= route.z0) continue;
     if (inSliderSpan(z)) continue;
     const r = OBSTACLE_RADIUS[kind];
     if (boosts.some((b) => Math.abs(x - b.x) < b.width / 2 + r && z >= b.z - r && z <= b.z + b.length + r)) continue;
@@ -1024,6 +1038,8 @@ export function createTrack(seed: number): Track {
   const laneAt = (z: number, x: number): Lane | null => {
     const route = routeAt(z);
     if (!route || route.lanes.length === 0) return null;
+    // A canyon's exit slope is solid (canyonExitSolid): no lane, so no hazard wipeout there.
+    if (route.canyon && z > route.z1 - TRACK_GEN.canyonExitSolid) return null;
     for (const lane of route.lanes) {
       if (x >= lane.xMin && x < lane.xMax) return lane;
     }

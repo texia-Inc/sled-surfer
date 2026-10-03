@@ -1006,6 +1006,24 @@ describe('canyon sections (canyon design §2)', () => {
     throw new Error('no canyon section found');
   }
 
+  it('difficulty tuning: the last canyonExitSolid metres are solid and the approach is obstacle-free', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = createTrack(seed);
+      for (let i = 5; i < 60; i++) {
+        const seg = t.getSegment(i);
+        const route = seg.route;
+        if (!route || !route.canyon) continue;
+        expect(t.laneAt(route.z1 - TRACK_GEN.canyonExitSolid + 0.5, 0)).toBeNull();
+        expect(t.laneAt(route.z1 - TRACK_GEN.canyonExitSolid - 0.5, 0)?.kind).toBe('pillars');
+        const ramp = seg.ramps.find((r) => r.id.endsWith('-cr'))!;
+        expect(ramp.width).toBe(TRACK_GEN.canyonRampWidth);
+        for (const o of seg.obstacles) {
+          expect(o.z < ramp.z - TRACK_GEN.canyonApproachClear || o.z > route.z1).toBe(true);
+        }
+      }
+    }
+  });
+
   it('only appears from canyonMinZ on, as a single full-width hazard lane with no pillars', () => {
     let found = false;
     for (let seed = 1; seed <= 40; seed++) {
